@@ -26,3 +26,6 @@ Thumbs.db
 # personal notes and local workflow helpers, not part of the project
 はじめに.md
 scripts/setup.ps1
+
+# release artifacts built by scripts/publish.ps1
+release/
