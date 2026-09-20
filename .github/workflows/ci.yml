@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Brings up real libp2p nodes on localhost and replicates between them,
+      # so a protocol change that breaks the wire format fails here.
+      - run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/s2s-peer
+      - run: cargo test --manifest-path rust/s2s-peer/Cargo.toml
+      - run: cargo clippy --manifest-path rust/s2s-peer/Cargo.toml -- -D warnings
+
+  # The two implementations must agree byte for byte on the signed encoding.
+  # They check themselves against docs/canonical-vectors.json above; this job
+  # exists so that a change to that file cannot silently satisfy only one.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: node --test packages/core/test/canonical.test.js
+      - run: cargo test --manifest-path rust/s2s-peer/Cargo.toml --test canonical

@@ -1,0 +1,58 @@
+{
+  "name": "s2s",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "S2S - a fully peer-to-peer SNS with no servers and no running costs",
+  "scripts": {
+    "test": "node --test packages/core/test/*.test.js packages/net/test/*.test.js",
+    "test:core": "node --test packages/core/test/*.test.js",
+    "test:net": "node --test packages/net/test/*.test.js",
+    "smoke": "npm run build:web && node scripts/electron.cjs --smoke",
+    "build:web": "vite build packages/ui",
+    "dev:web": "vite packages/ui",
+    "preview:web": "vite preview packages/ui",
+    "desktop": "npm run build:web && node scripts/electron.cjs",
+    "desktop:dev": "node scripts/electron.cjs",
+    "peer": "node scripts/peer.js",
+    "mobile:sync": "npm run build:web && cap copy android",
+    "mobile:build": "node scripts/mobile-build.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@chainsafe/libp2p-gossipsub": "^14.1.2",
+    "@chainsafe/libp2p-noise": "^16.1.5",
+    "@chainsafe/libp2p-yamux": "^7.0.4",
+    "@libp2p/bootstrap": "^11.0.47",
+    "@libp2p/circuit-relay-v2": "^3.2.24",
+    "@libp2p/identify": "^3.0.39",
+    "@libp2p/kad-dht": "^14.2.15",
+    "@libp2p/mdns": "^11.0.47",
+    "@libp2p/ping": "^2.0.37",
+    "@libp2p/tcp": "^10.1.19",
+    "@libp2p/utils": "^7.4.1",
+    "@libp2p/webrtc": "^5.2.24",
+    "@libp2p/websockets": "^9.2.19",
+    "@multiformats/multiaddr": "^12.5.1",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^1.2.6",
+    "it-length-prefixed-stream": "^3.0.1",
+    "libp2p": "^2.10.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "uint8arrays": "^6.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.4.3",
+    "vite": "^8.3.0",
+    "vite-plugin-node-polyfills": "^0.28.0"
+  },
+  "main": "apps/desktop/main.cjs"
+}

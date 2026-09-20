@@ -1,0 +1,28 @@
+# dependencies and build output
+node_modules/
+packages/ui/dist/
+rust/s2s-peer/target/
+apps/desktop/release/
+
+# the Capacitor Android project is generated; `npm run mobile:build` recreates it
+apps/mobile/android/
+apps/mobile/www/
+
+# peer data directories: these hold account private keys
+.s2s-peer/
+.peer-*/
+.s2s/
+**/identity.json
+**/events.jsonl
+**/blobs/
+
+# scratch
+.tmp/
+*.log
+.env
+.DS_Store
+Thumbs.db
+
+# personal notes and local workflow helpers, not part of the project
+はじめに.md
+scripts/setup.ps1

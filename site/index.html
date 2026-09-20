@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>S2S — サーバーのないSNS</title>
+<meta name="description" content="S2S は完全P2P型のSNSです。Twitter型のタイムライン、Instagram型のメディア一覧、2ch型の掲示板を、ひとつの署名付きログの上に載せています。維持費はゼロ。" />
+<meta property="og:title" content="S2S — サーバーのないSNS" />
+<meta property="og:description" content="完全P2P型のSNS。アカウントサーバーもDBもCDNもありません。投稿は自分の端末の署名付きログに追記され、つながったピアへ直接複製されます。" />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230b0d12'/><circle cx='30' cy='35' r='9' fill='%235b8cff'/><circle cx='70' cy='35' r='9' fill='%233ddc97'/><circle cx='50' cy='70' r='9' fill='%235b8cff'/><path d='M30 35 L70 35 L50 70 Z' stroke='%23444c63' stroke-width='3' fill='none'/></svg>" />
+<style>
+  :root {
+    --bg: #0b0d12;
+    --raised: #131722;
+    --input: #1b2030;
+    --line: #242a3a;
+    --text: #e7eaf2;
+    --muted: #8b93a7;
+    --accent: #5b8cff;
+    --good: #3ddc97;
+    --warn: #ffd79a;
+    --danger: #ff6b6b;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.75 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+
+  header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #10141d 0%, var(--bg) 100%);
+    padding: 72px 0 56px;
+    text-align: center;
+  }
+  header .mark { width: 64px; height: 64px; margin-bottom: 18px; }
+  h1 { font-size: clamp(38px, 8vw, 60px); margin: 0; letter-spacing: -0.02em; font-weight: 700; }
+  .tagline { font-size: clamp(17px, 3.4vw, 21px); color: var(--muted); margin: 14px auto 0; max-width: 34em; }
+  .pills { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+  .pill {
+    border: 1px solid var(--line); background: var(--raised);
+    border-radius: 999px; padding: 6px 15px; font-size: 13.5px; color: var(--muted);
+  }
+  .pill b { color: var(--text); font-weight: 600; }
+
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+  .btn {
+    display: inline-block; text-decoration: none;
+    border-radius: 11px; padding: 12px 22px; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--line); background: var(--raised); color: var(--text);
+    transition: transform .12s, border-color .12s;
+  }
+  .btn:hover { transform: translateY(-1px); border-color: #3a445c; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #07101f; }
+
+  section { padding: 56px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+  h2 { font-size: clamp(23px, 4.6vw, 30px); margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 + .lede { color: var(--muted); margin: 0 0 30px; font-size: 16.5px; }
+  h3 { font-size: 17.5px; margin: 32px 0 8px; }
+
+  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card {
+    background: var(--raised); border: 1px solid var(--line);
+    border-radius: 14px; padding: 20px;
+  }
+  .card .ico { font-size: 26px; line-height: 1; display: block; margin-bottom: 10px; }
+  .card h3 { margin: 0 0 6px; font-size: 16.5px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.7; }
+
+  pre {
+    background: #080a0f; border: 1px solid var(--line); border-radius: 11px;
+    padding: 15px 17px; overflow-x: auto; font-size: 13.5px; line-height: 1.65; margin: 12px 0;
+  }
+  pre .c { color: #6b7488; }
+  code.inline {
+    background: var(--input); border: 1px solid var(--line);
+    border-radius: 6px; padding: 1px 6px; font-size: 0.88em;
+  }
+
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
+  ol.steps > li {
+    counter-increment: s; position: relative;
+    padding: 0 0 4px 46px; margin-bottom: 30px;
+  }
+  ol.steps > li::before {
+    content: counter(s);
+    position: absolute; left: 0; top: 1px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); color: #07101f;
+    display: grid; place-items: center; font-weight: 700; font-size: 15px;
+  }
+  ol.steps h3 { margin: 0 0 6px; font-size: 17px; }
+  ol.steps p { margin: 0 0 8px; color: var(--muted); font-size: 15px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+
+  .note {
+    border-left: 3px solid var(--warn); background: #1a1610;
+    padding: 13px 16px; border-radius: 0 10px 10px 0; margin: 18px 0;
+    font-size: 14.5px; color: #e8d6b8;
+  }
+  .note.blue { border-left-color: var(--accent); background: #101624; color: #cfd9f0; }
+
+  .dl { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .dl a {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--raised); border: 1px solid var(--line);
+    border-radius: 14px; padding: 20px; transition: border-color .12s, transform .12s;
+  }
+  .dl a:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .dl .ico { font-size: 28px; display: block; margin-bottom: 10px; }
+  .dl strong { display: block; font-size: 16.5px; margin-bottom: 4px; }
+  .dl span { color: var(--muted); font-size: 14px; }
+
+  ul.plain { padding-left: 1.15em; color: var(--muted); }
+  ul.plain li { margin-bottom: 8px; }
+  ul.plain b, ul.plain strong { color: var(--text); }
+
+  figure.diagram { margin: 24px 0; }
+  figure.diagram svg { width: 100%; height: auto; display: block; }
+  figcaption { color: var(--muted); font-size: 13.5px; margin-top: 10px; text-align: center; }
+
+  footer {
+    padding: 44px 0 60px; text-align: center;
+    color: var(--muted); font-size: 14px; border-top: 1px solid var(--line);
+  }
+  footer a { margin: 0 9px; }
+
+  @media (max-width: 600px) {
+    section { padding: 42px 0; }
+    header { padding: 52px 0 42px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+      <rect width="100" height="100" rx="22" fill="#131722" stroke="#242a3a"/>
+      <path d="M30 35 L70 35 L50 70 Z" stroke="#3a445c" stroke-width="3" fill="none"/>
+      <circle cx="30" cy="35" r="9" fill="#5b8cff"/>
+      <circle cx="70" cy="35" r="9" fill="#3ddc97"/>
+      <circle cx="50" cy="70" r="9" fill="#5b8cff"/>
+    </svg>
+    <h1>S2S</h1>
+    <p class="tagline">サーバーを持たない SNS。<br />投稿はあなたの端末に署名付きで積まれ、つながった相手へ直接届きます。</p>
+    <div class="pills">
+      <span class="pill"><b>維持費ゼロ</b></span>
+      <span class="pill">アカウント登録なし</span>
+      <span class="pill">PC / スマホ / Web</span>
+      <span class="pill">AGPL-3.0</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#download">ダウンロード</a>
+      <a class="btn" href="https://github.com/__GH_OWNER__/s2s">GitHub で見る</a>
+    </div>
+  </div>
+</header>
+
+<section id="what">
+  <div class="wrap">
+    <h2>これは何か</h2>
+    <p class="lede">3 つの形の SNS を、ひとつの仕組みの上に載せたものです。</p>
+
+    <div class="cards">
+      <div class="card">
+        <span class="ico">🏠</span>
+        <h3>Twitter 型</h3>
+        <p>タイムライン、返信、いいね、リポスト、フォロー、ブロック、通知。</p>
+      </div>
+      <div class="card">
+        <span class="ico">🖼</span>
+        <h3>Instagram 型</h3>
+        <p>画像・動画つきの投稿だけをグリッドで。実体はハッシュで参照され、持っているピアから直接届きます。</p>
+      </div>
+      <div class="card">
+        <span class="ico">🧵</span>
+        <h3>2ch 型</h3>
+        <p>板とスレッド。レス番号は <code class="inline">&gt;&gt;1</code> から連番。板は誰でも作れて、名前が同じなら同じ板です。</p>
+      </div>
+    </div>
+
+    <h3>サーバーがない、とは</h3>
+    <p style="color:var(--muted)">
+      アカウントサーバーも、データベースも、CDN も、リレーの契約もありません。
+      あなたのアカウントは <b style="color:var(--text)">鍵そのもの</b>で、投稿はあなたの端末の追記専用ログに署名付きで積まれます。
+      他のピアはそのログを複製するだけで、誰も「正本」を持ちません。
+    </p>
+
+    <div class="note blue">
+      <b>「誰がサーバー代を払うのか」への答え。</b><br />
+      PC 版が入口になります。同じ Wi-Fi なら設定ゼロで互いを見つけ、NAT 越しの端末どうしの中継も引き受けます。
+      止めれば止まり、他の誰かがオンラインなら網は生き続けます。払う先がありません。
+    </div>
+  </div>
+</section>
+
+<section id="how-it-works">
+  <div class="wrap">
+    <h2>どう動いているか</h2>
+    <p class="lede">通信より先に、データの形を決めてあります。</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 700 250" role="img" aria-label="ユーザーごとの署名付き追記ログが、ピア間で複製される様子">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#5b8cff"/>
+          </marker>
+        </defs>
+
+        <text x="16" y="24" fill="#8b93a7" font-size="13" font-family="system-ui">あなたのログ（追記専用・署名付き）</text>
+        <g font-family="ui-monospace, monospace" font-size="12">
+          <rect x="16" y="38" width="112" height="34" rx="7" fill="#131722" stroke="#242a3a"/>
+          <text x="30" y="59" fill="#e7eaf2">#1 profile</text>
+          <rect x="146" y="38" width="112" height="34" rx="7" fill="#131722" stroke="#242a3a"/>
+          <text x="160" y="59" fill="#e7eaf2">#2 post</text>
+          <rect x="276" y="38" width="112" height="34" rx="7" fill="#131722" stroke="#242a3a"/>
+          <text x="290" y="59" fill="#e7eaf2">#3 follow</text>
+          <rect x="406" y="38" width="112" height="34" rx="7" fill="#131722" stroke="#242a3a"/>
+          <text x="420" y="59" fill="#e7eaf2">#4 post</text>
+        </g>
+        <g stroke="#3a445c" stroke-width="2" marker-end="url(#ar)" fill="none">
+          <path d="M128 55 L142 55"/><path d="M258 55 L272 55"/><path d="M388 55 L402 55"/>
+        </g>
+        <text x="534" y="59" fill="#8b93a7" font-size="12" font-family="system-ui">各イベントは</text>
+        <text x="534" y="75" fill="#8b93a7" font-size="12" font-family="system-ui">前のハッシュを持つ</text>
+
+        <line x1="16" y1="104" x2="684" y2="104" stroke="#242a3a"/>
+
+        <text x="16" y="132" fill="#8b93a7" font-size="13" font-family="system-ui">同期は「どこまで持っているか」を1つの整数で照らし合わせるだけ</text>
+        <g font-family="ui-monospace, monospace" font-size="12.5">
+          <rect x="16" y="150" width="200" height="76" rx="10" fill="#131722" stroke="#242a3a"/>
+          <text x="32" y="174" fill="#5b8cff">あなた</text>
+          <text x="32" y="196" fill="#e7eaf2">{ "@alice": 4 }</text>
+          <text x="32" y="216" fill="#8b93a7" font-size="11">4 まで持っている</text>
+
+          <rect x="484" y="150" width="200" height="76" rx="10" fill="#131722" stroke="#242a3a"/>
+          <text x="500" y="174" fill="#3ddc97">相手</text>
+          <text x="500" y="196" fill="#e7eaf2">{ "@alice": 2 }</text>
+          <text x="500" y="216" fill="#8b93a7" font-size="11">2 までしかない</text>
+        </g>
+        <path d="M228 188 L470 188" stroke="#5b8cff" stroke-width="2" marker-end="url(#ar)" fill="none"/>
+        <text x="272" y="180" fill="#e7eaf2" font-size="12.5" font-family="system-ui">#3 と #4 を送る</text>
+      </svg>
+      <figcaption>ログが厳密な連鎖なので、差分はこの1つの数だけで正確に出せます。集合照合も Merkle 木も要りません。</figcaption>
+    </figure>
+
+    <table>
+      <tr><th style="width:30%">層</th><th>役割</th></tr>
+      <tr><td><b>イベント</b></td><td>投稿も返信もフォローも、すべて ed25519 で署名された 1 件のイベント</td></tr>
+      <tr><td><b>ログ</b></td><td>人ごとの追記専用チェーン。1件でも改竄すると以降すべてが壊れる</td></tr>
+      <tr><td><b>ゴシップ</b></td><td>今この瞬間の投稿を即座にばらまく</td></tr>
+      <tr><td><b>同期</b></td><td>オフラインだった間の抜けを埋める。SNS ではこちらが本命</td></tr>
+      <tr><td><b>メディア</b></td><td>投稿はハッシュだけを持ち、実体は持っているピアから取りに行く</td></tr>
+    </table>
+
+    <p style="color:var(--muted)">
+      仕様は <a href="https://github.com/__GH_OWNER__/s2s/blob/main/docs/PROTOCOL.md">docs/PROTOCOL.md</a> にあります。
+      別実装を書くのに足りるだけ書いてあり、実際に <b style="color:var(--text)">JavaScript 版と Rust 版がこの文書だけを根拠に通信</b>しています。
+    </p>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <h2>ダウンロード</h2>
+    <p class="lede">まず PC 版を入れてください。スマホと Web 版はそこにつなぎます。</p>
+
+    <div class="dl">
+      <a href="https://github.com/__GH_OWNER__/s2s/releases/latest">
+        <span class="ico">💻</span>
+        <strong>PC 版</strong>
+        <span>Windows / macOS / Linux。ソースから <code class="inline">npm run desktop</code> で起動します。</span>
+      </a>
+      <a href="https://github.com/__GH_OWNER__/s2s/releases/latest">
+        <span class="ico">📱</span>
+        <strong>Android APK</strong>
+        <span>S2S-android.apk。提供元不明のアプリの許可が必要です。</span>
+      </a>
+      <a href="https://github.com/__GH_OWNER__/s2s/releases/latest">
+        <span class="ico">🌐</span>
+        <strong>Web 版</strong>
+        <span>完全な静的ファイル。好きな静的ホスティングに置けます。</span>
+      </a>
+      <a href="https://github.com/__GH_OWNER__/s2s/releases/latest">
+        <span class="ico">🦀</span>
+        <strong>常時起動ピア</strong>
+        <span>Rust 製。数 MB で動くので、ラズパイや余っているマシン向け。</span>
+      </a>
+    </div>
+
+    <div class="note">
+      <b>Android の APK は署名なしのデバッグ版です。</b>
+      Play ストア経由ではないので、インストール時に警告が出ます。
+      気になる場合はソースから自分でビルドしてください（<code class="inline">npm run mobile:build</code>）。
+    </div>
+
+    <h3>ソースから</h3>
+    <pre><span class="c"># Node.js 20 以上が必要です</span>
+git clone https://github.com/__GH_OWNER__/s2s.git
+cd s2s
+npm install
+
+npm run desktop        <span class="c"># PC アプリ</span>
+npm run build:web      <span class="c"># Web 版（packages/ui/dist に出ます）</span>
+npm run mobile:build   <span class="c"># Android APK（JDK 21+ と Android SDK が必要）</span>
+node scripts/peer.js   <span class="c"># 画面なしの常時起動ピア</span></pre>
+  </div>
+</section>
+
+<section id="usage">
+  <div class="wrap">
+    <h2>使い方</h2>
+    <p class="lede">最初の一回だけ、相手を教える必要があります。そのあとは自動です。</p>
+
+    <ol class="steps">
+      <li>
+        <h3>PC 版を起動する</h3>
+        <p>起動した時点であなたの鍵が作られ、それがアカウントになります。登録もメールアドレスもありません。</p>
+        <p>「設定」タブに<b>自分のアドレス</b>が並びます。<code class="inline">/ws/</code> を含む行が、スマホと Web 版から接続するためのものです。</p>
+      </li>
+      <li>
+        <h3>2 台目をつなぐ</h3>
+        <p><b>PC どうしなら、同じ Wi-Fi にいるだけで自動的に見つかります。</b>設定は要りません（mDNS）。</p>
+        <p>スマホと Web 版はブラウザと同じ制約下にあるので自動発見ができません。設定タブに上のアドレスを貼って「接続」を押してください。</p>
+        <pre><span class="c"># Web 版なら URL に書いておけば自動接続します</span>
+index.html#peer=/ip4/192.168.0.10/tcp/4002/ws/p2p/12D3Koo...</pre>
+      </li>
+      <li>
+        <h3>あとは普通に使う</h3>
+        <p>投稿すると、つながっている相手に自動で届きます。相手がその先の誰かとつながっていれば、そこへも伝わります。</p>
+        <p>フォロー、いいね、返信、板へのスレ立て。どれも「自分のログに 1 件追記する」ことでしかありません。</p>
+      </li>
+    </ol>
+
+    <h3>鍵のバックアップを取ってください</h3>
+    <p style="color:var(--muted)">
+      設定タブの「秘密鍵を表示する」から控えられます。
+      <b style="color:var(--danger)">鍵を失うとその人格は二度と取り戻せません。</b>
+      再発行してくれる主体が存在しないからです。Web 版はブラウザのサイトデータを消すと鍵も消えます。
+    </p>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <h2>正直に言っておくこと</h2>
+    <p class="lede">中央サーバーが黙って引き受けていた仕事は、全部こちらに返ってきます。</p>
+
+    <ul class="plain">
+      <li><b>オフラインの相手の投稿は見えません。</b>誰かが中継して持っていれば見えます。常時起動のピアを1つ置くとかなり楽になります。</li>
+      <li><b>検索は手元にあるものだけです。</b>世界中のピアに問い合わせることはできません。</li>
+      <li><b>画像は誰も持たなくなれば消えます。</b>人気のあるものは多くのピアに複製されて残り、誰も見なかったものは消えます。</li>
+      <li><b>鍵を失うとアカウントは戻りません。</b></li>
+      <li><b>スパム対策は弱いです。</b>今あるのはブロックだけで、鍵はいくらでも作れます。Sybil 攻撃への耐性はありません。</li>
+      <li><b>投稿はすべて公開です。</b>暗号化も DM もありません。</li>
+      <li><b>削除はお願いでしかありません。</b>受け取っていないピアには効きません。一度出したものは取り消せないと考えてください。</li>
+    </ul>
+
+    <p style="color:var(--muted)">
+      どれが設計上の割り切りで、どれが未実装かは
+      <a href="https://github.com/__GH_OWNER__/s2s/blob/main/docs/LIMITS.md">docs/LIMITS.md</a> で分けて書いています。
+    </p>
+
+    <div class="note blue">
+      <b>セキュリティについて。</b>
+      イベントはすべて署名され、ログはハッシュ連鎖で、メディアは内容ハッシュで名前がついています。
+      公開前にコードレビューを通し、悪意あるピアを想定したテストを別に用意しました
+      （パストラバーサル、先回りした削除、不正な同期ベクタ、並行書き込みなど）。
+      それでも<b>まだ 0.1.0 です</b>。見つけたら
+      <a href="https://github.com/__GH_OWNER__/s2s/issues">Issue</a> をください。
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      <a href="https://github.com/__GH_OWNER__/s2s">GitHub</a>·
+      <a href="https://github.com/__GH_OWNER__/s2s/blob/main/docs/PROTOCOL.md">プロトコル仕様</a>·
+      <a href="https://github.com/__GH_OWNER__/s2s/blob/main/docs/ARCHITECTURE.md">構成</a>·
+      <a href="https://github.com/__GH_OWNER__/s2s/blob/main/docs/LIMITS.md">制約</a>·
+      <a href="https://github.com/__GH_OWNER__/s2s/releases">リリース</a>
+    </p>
+    <p style="margin-top:18px">AGPL-3.0 · サーバーはありません</p>
+  </div>
+</footer>
+
+</body>
+</html>

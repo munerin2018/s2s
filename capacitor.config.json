@@ -1,0 +1,14 @@
+{
+  "appId": "net.s2s.app",
+  "appName": "S2S",
+  "webDir": "packages/ui/dist",
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true,
+    "path": "apps/mobile/android"
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

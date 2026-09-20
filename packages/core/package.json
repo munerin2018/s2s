@@ -1,0 +1,16 @@
+{
+  "name": "@s2s/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./store-node": "./src/store-node.js",
+    "./store-idb": "./src/store-idb.js"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.0",
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^1.2.4"
+  }
+}

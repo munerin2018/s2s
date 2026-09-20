@@ -1,0 +1,172 @@
+{
+  "note": "Conformance vectors for the S2S canonical encoding. Both implementations read this file: packages/core/test/canonical.test.js and rust/s2s-peer/tests/canonical.rs. If they ever disagree, signatures stop verifying across the boundary and that author's log splits the network permanently, so this file is the shared source of truth rather than either implementation.",
+  "valid": [
+    {
+      "why": "keys sort, no whitespace",
+      "input": {
+        "b": 1,
+        "a": 2
+      },
+      "canonical": "{\"a\":2,\"b\":1}"
+    },
+    {
+      "why": "array order is meaningful",
+      "input": {
+        "a": [
+          3,
+          1
+        ]
+      },
+      "canonical": "{\"a\":[3,1]}"
+    },
+    {
+      "why": "nesting",
+      "input": {
+        "z": {
+          "y": [
+            1,
+            {
+              "x": true
+            }
+          ]
+        }
+      },
+      "canonical": "{\"z\":{\"y\":[1,{\"x\":true}]}}"
+    },
+    {
+      "why": "null is a value",
+      "input": {
+        "a": null
+      },
+      "canonical": "{\"a\":null}"
+    },
+    {
+      "why": "booleans",
+      "input": [
+        true,
+        false
+      ],
+      "canonical": "[true,false]"
+    },
+    {
+      "why": "empty containers",
+      "input": {
+        "a": {},
+        "b": []
+      },
+      "canonical": "{\"a\":{},\"b\":[]}"
+    },
+    {
+      "why": "negative and zero integers",
+      "input": [
+        0,
+        -1,
+        0
+      ],
+      "canonical": "[0,-1,0]"
+    },
+    {
+      "why": "largest safe integer",
+      "input": 9007199254740991,
+      "canonical": "9007199254740991"
+    },
+    {
+      "why": "smallest safe integer",
+      "input": -9007199254740991,
+      "canonical": "-9007199254740991"
+    },
+    {
+      "why": "quotes and backslashes escape",
+      "input": "a\"b\\c",
+      "canonical": "\"a\\\"b\\\\c\""
+    },
+    {
+      "why": "the named control escapes",
+      "input": "\b\f\n\r\t",
+      "canonical": "\"\\b\\f\\n\\r\\t\""
+    },
+    {
+      "why": "other control characters use \\u",
+      "input": "\u0001\u001f",
+      "canonical": "\"\\u0001\\u001f\""
+    },
+    {
+      "why": "a forward slash is not escaped",
+      "input": "a/b",
+      "canonical": "\"a/b\""
+    },
+    {
+      "why": "non-ASCII stays literal",
+      "input": "日本語 🚀",
+      "canonical": "\"日本語 🚀\""
+    },
+    {
+      "why": "U+2028 and U+2029 stay literal",
+      "input": "a b c",
+      "canonical": "\"a b c\""
+    },
+    {
+      "why": "keys sort by code point, not by UTF-16 code unit: a plain JavaScript sort would put the rocket first because its surrogates are below U+E000",
+      "input": {
+        "🚀": 1,
+        "�": 2
+      },
+      "canonical": "{\"�\":2,\"🚀\":1}"
+    },
+    {
+      "why": "a shorter key sorts before a longer one that starts with it",
+      "input": {
+        "ab": 1,
+        "a": 2
+      },
+      "canonical": "{\"a\":2,\"ab\":1}"
+    },
+    {
+      "why": "a realistic event body",
+      "input": {
+        "author": "@3v4hFazSseKTjqaYKPNxnhv1w1iMQyCZmeUzvgGwDLom",
+        "seq": 3,
+        "prev": "%9LEijAWfeCGHTNhYz5X3J2nuQg9cM2PnpydvBaixoStV",
+        "ts": 1758000000000,
+        "kind": "post",
+        "content": {
+          "text": "今日のロードバイク 🚲",
+          "tags": [
+            "bike",
+            "ride"
+          ]
+        }
+      },
+      "canonical": "{\"author\":\"@3v4hFazSseKTjqaYKPNxnhv1w1iMQyCZmeUzvgGwDLom\",\"content\":{\"tags\":[\"bike\",\"ride\"],\"text\":\"今日のロードバイク 🚲\"},\"kind\":\"post\",\"prev\":\"%9LEijAWfeCGHTNhYz5X3J2nuQg9cM2PnpydvBaixoStV\",\"seq\":3,\"ts\":1758000000000}"
+    },
+    {
+      "why": "an integral float normalises to the integer JavaScript parses it as",
+      "input": 1.0,
+      "canonical": "1"
+    },
+    {
+      "why": "exponent notation is still a number, and an integral one normalises",
+      "input": 1000.0,
+      "canonical": "1000"
+    },
+    {
+      "why": "negative zero writes as zero on both sides",
+      "input": -0.0,
+      "canonical": "0"
+    }
+  ],
+  "rejected": [
+    {
+      "why": "a float has no encoding both languages agree on",
+      "json": "1.5"
+    },
+    {
+      "why": "beyond the safe integer range the two round differently",
+      "json": "9007199254740993"
+    },
+    {
+      "why": "nested floats are refused too",
+      "json": "{\"a\":[1,2.5]}"
+    }
+  ]
+}
