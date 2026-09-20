@@ -1,4 +1,4 @@
-<#
+﻿<#
     Publish S2S to GitHub.
 
     Run `gh auth login` first - that step needs a browser or a token and cannot
@@ -24,12 +24,22 @@ param(
     [switch]$DryRun
 )
 
-$ErrorActionPreference = "Stop"
+# Not "Stop": Windows PowerShell turns anything a native command writes to
+# stderr into an ErrorRecord, and `gh` writes perfectly ordinary status text
+# there. Exit codes are checked explicitly instead, and `throw` still stops.
+$ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 
 function Step($text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
 function Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
+
+# Run a native command, discard its chatter, and report only whether it worked.
+function Invoke-Quietly {
+    param([string]$Exe, [string[]]$Arguments)
+    & $Exe @Arguments 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
 
 try {
     # gh may have been installed into the per-user WinGet links directory,
@@ -41,8 +51,7 @@ try {
         throw "GitHub CLI not found. Install it with: winget install --id GitHub.cli"
     }
 
-    gh auth status 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    if (-not (Invoke-Quietly gh @("auth", "status"))) {
         throw "Not logged in to GitHub. Run 'gh auth login' first, then re-run this script."
     }
 
@@ -79,8 +88,7 @@ try {
     # ---- 2. create the repository and push -------------------------------
 
     Step "creating the repository"
-    gh repo view "$owner/$Repo" 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    if (Invoke-Quietly gh @("repo", "view", "$owner/$Repo")) {
         Note "$owner/$Repo already exists"
         if (-not (git remote get-url origin 2>$null)) {
             git remote add origin "https://github.com/$owner/$Repo.git"
@@ -101,11 +109,15 @@ try {
 
     Step "turning on GitHub Pages"
     $pagesBody = '{"source":{"branch":"main","path":"/site"}}'
-    $pagesBody | gh api "repos/$owner/$Repo/pages" -X POST --input - 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $pagesFile = Join-Path $env:TEMP "s2s-pages.json"
+    Set-Content -Path $pagesFile -Value $pagesBody -Encoding ascii -NoNewline
+
+    $created = Invoke-Quietly gh @("api", "repos/$owner/$Repo/pages", "-X", "POST", "--input", $pagesFile)
+    if (-not $created) {
         # Already enabled, or the source needs updating rather than creating.
-        $pagesBody | gh api "repos/$owner/$Repo/pages" -X PUT --input - 2>&1 | Out-Null
+        Invoke-Quietly gh @("api", "repos/$owner/$Repo/pages", "-X", "PUT", "--input", $pagesFile) | Out-Null
     }
+    Remove-Item $pagesFile -ErrorAction SilentlyContinue
     Note "https://$owner.github.io/$Repo/  (live in a minute or two)"
 
     # ---- 4. release artifacts -------------------------------------------
@@ -139,8 +151,7 @@ try {
     $assets = Get-ChildItem $out -File | ForEach-Object { $_.FullName }
     Note ("attaching: " + (($assets | Split-Path -Leaf) -join ", "))
 
-    gh release view $Tag 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    if (Invoke-Quietly gh @("release", "view", $Tag)) {
         gh release upload $Tag $assets --clobber
     } else {
         gh release create $Tag $assets --title "S2S $Tag" --notes-file "docs\RELEASE-NOTES.md"
