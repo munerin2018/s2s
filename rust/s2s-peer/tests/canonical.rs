@@ -9,7 +9,13 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 /// The crate's canonical encoder, reached through the binary's module tree.
+///
+/// Compiling `codec.rs` a second time as its own crate pulls in every public
+/// function it has, not just `canonical` - the rest are dead code from this
+/// binary's point of view, which `--all-targets` clippy runs would otherwise
+/// flag.
 #[path = "../src/codec.rs"]
+#[allow(dead_code)]
 mod codec;
 
 fn vectors() -> Value {

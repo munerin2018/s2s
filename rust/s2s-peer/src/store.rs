@@ -404,10 +404,10 @@ impl Store {
             }
         }
 
-        if persist {
-            if let Err(err) = self.append_to_disk(&event) {
-                return Put::Rejected(format!("could not write to the log: {err}"));
-            }
+        if persist
+            && let Err(err) = self.append_to_disk(&event)
+        {
+            return Put::Rejected(format!("could not write to the log: {err}"));
         }
         let author = event.author.clone();
         self.apply(event);
@@ -444,31 +444,31 @@ impl Store {
         log.push(event.clone());
         self.heads.insert(event.author.clone(), event.seq);
 
-        if event.kind == "delete" {
-            if let Some(target) = event.content.get("target").and_then(Value::as_str) {
-                match self.events.get(target) {
-                    // Only the author of an event may tombstone it.
-                    Some(t) if t.author == event.author => {
-                        self.deleted.insert(target.to_string());
-                    }
-                    Some(_) => {}
-                    // The target is not here yet, so the author cannot be
-                    // checked. Trusting it now would let anyone censor
-                    // anything by naming it before it arrives.
-                    None => {
-                        self.tombstone_pending
-                            .entry(target.to_string())
-                            .or_default()
-                            .insert(event.author.clone());
-                    }
+        if event.kind == "delete"
+            && let Some(target) = event.content.get("target").and_then(Value::as_str)
+        {
+            match self.events.get(target) {
+                // Only the author of an event may tombstone it.
+                Some(t) if t.author == event.author => {
+                    self.deleted.insert(target.to_string());
+                }
+                Some(_) => {}
+                // The target is not here yet, so the author cannot be
+                // checked. Trusting it now would let anyone censor
+                // anything by naming it before it arrives.
+                None => {
+                    self.tombstone_pending
+                        .entry(target.to_string())
+                        .or_default()
+                        .insert(event.author.clone());
                 }
             }
         }
 
-        if let Some(waiting) = self.tombstone_pending.remove(&event.id) {
-            if waiting.contains(&event.author) {
-                self.deleted.insert(event.id.clone());
-            }
+        if let Some(waiting) = self.tombstone_pending.remove(&event.id)
+            && waiting.contains(&event.author)
+        {
+            self.deleted.insert(event.id.clone());
         }
 
         self.events.insert(event.id.clone(), event);

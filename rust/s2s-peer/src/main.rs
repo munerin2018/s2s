@@ -353,10 +353,10 @@ fn media_refs(event: &Event) -> Vec<String> {
     // is where the value used to be sliced by byte offset, so it checks here
     // as well rather than relying on a caller two layers away.
     let mut take = |v: Option<&str>| {
-        if let Some(id) = v {
-            if is_blob_id(id) {
-                out.push(id.to_string());
-            }
+        if let Some(id) = v
+            && is_blob_id(id)
+        {
+            out.push(id.to_string());
         }
     };
     if let Some(list) = event.content.get("media").and_then(|m| m.as_array()) {
