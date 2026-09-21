@@ -108,17 +108,32 @@ try {
     # ---- 3. GitHub Pages -------------------------------------------------
 
     Step "turning on GitHub Pages"
-    $pagesBody = '{"source":{"branch":"main","path":"/site"}}'
+    # The legacy "deploy from a branch" source only accepts / or /docs as the
+    # path - site/ is neither, and the API rejects it with a 422 that a
+    # fire-and-forget POST silently swallows. build_type "workflow" hands
+    # deployment to .github/workflows/pages.yml instead, which can publish any
+    # directory. That workflow runs on its own once it reaches the branch; it
+    # is not triggered from here.
+    $pagesBody = '{"build_type":"workflow"}'
     $pagesFile = Join-Path $env:TEMP "s2s-pages.json"
     Set-Content -Path $pagesFile -Value $pagesBody -Encoding ascii -NoNewline
 
     $created = Invoke-Quietly gh @("api", "repos/$owner/$Repo/pages", "-X", "POST", "--input", $pagesFile)
     if (-not $created) {
-        # Already enabled, or the source needs updating rather than creating.
+        # Already enabled from an earlier run.
         Invoke-Quietly gh @("api", "repos/$owner/$Repo/pages", "-X", "PUT", "--input", $pagesFile) | Out-Null
     }
     Remove-Item $pagesFile -ErrorAction SilentlyContinue
-    Note "https://$owner.github.io/$Repo/  (live in a minute or two)"
+
+    # Verify rather than assume: the calls above can each fail silently
+    # (wrong body, already configured differently, rate limit) and a
+    # fire-and-forget report here is exactly what shipped a broken 404 last time.
+    $pagesNow = gh api "repos/$owner/$Repo/pages" 2>$null | ConvertFrom-Json
+    if ($pagesNow -and $pagesNow.build_type -eq "workflow") {
+        Note "https://$owner.github.io/$Repo/  (live once .github/workflows/pages.yml runs)"
+    } else {
+        Write-Host "    could not confirm Pages is enabled - check https://github.com/$owner/$Repo/settings/pages" -ForegroundColor Yellow
+    }
 
     # ---- 4. release artifacts -------------------------------------------
 
