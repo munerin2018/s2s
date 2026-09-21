@@ -1,6 +1,6 @@
-# S2S
+﻿# S2S
 
-[![tests](https://github.com/__GH_OWNER__/s2s/actions/workflows/ci.yml/badge.svg)](https://github.com/__GH_OWNER__/s2s/actions/workflows/ci.yml)
+[![tests](https://github.com/munerin2018/s2s/actions/workflows/ci.yml/badge.svg)](https://github.com/munerin2018/s2s/actions/workflows/ci.yml)
 [![license: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 サーバーを持たない P2P 型 SNS。Twitter 型のタイムライン、Instagram 型のメディア一覧、
@@ -11,8 +11,8 @@
 維持費はゼロです。アカウントサーバーも、DB も、CDN も、リレーの契約もありません。
 投稿はあなたの端末の署名付きログに追記され、つながったピアへ直接複製されます。
 
-📖 [紹介ページ](https://__GH_OWNER__.github.io/s2s/) ·
-⬇️ [ダウンロード](https://github.com/__GH_OWNER__/s2s/releases/latest) ·
+📖 [紹介ページ](https://munerin2018.github.io/s2s/) ·
+⬇️ [ダウンロード](https://github.com/munerin2018/s2s/releases/latest) ·
 📐 [プロトコル仕様](docs/PROTOCOL.md)
 
 <details>
@@ -46,7 +46,7 @@ the name, local-only search, and media that disappears once nobody keeps it.
 ### 1. PC アプリを起動する
 
 ```bash
-git clone https://github.com/__GH_OWNER__/s2s.git
+git clone https://github.com/munerin2018/s2s.git
 cd s2s
 npm install
 npm run desktop
@@ -71,7 +71,7 @@ PC アプリのタイムラインに「こんにちは」が出てくれば成�
 
 すでにビルド済みの APK があります：
 
-[リリースページ](https://github.com/__GH_OWNER__/s2s/releases/latest) から
+[リリースページ](https://github.com/munerin2018/s2s/releases/latest) から
 `S2S-android.apk` を落とすか、自分でビルドしてください。
 
 ```bash
