@@ -20,12 +20,14 @@ import { parseArgs } from 'node:util'
 import { S2S } from '../packages/core/src/s2s.js'
 import { FileBackend, loadOrCreateSecret } from '../packages/core/src/store-node.js'
 import { createNodePeer } from '../packages/net/src/platform-node.js'
+import { loadOrCreateNetworkKey, openNetworkDatastore } from '../packages/net/src/node-keys.js'
 
 const { values } = parseArgs({
   options: {
     dir: { type: 'string', default: join(process.cwd(), '.s2s-peer') },
     tcp: { type: 'string', default: '0' },
     ws: { type: 'string', default: '0' },
+    webrtc: { type: 'string', default: '0' },
     connect: { type: 'string', multiple: true, default: [] },
     lan: { type: 'boolean', default: true },
     'no-lan': { type: 'boolean', default: false },
@@ -45,6 +47,7 @@ S2S headless peer
   --dir <path>       where the log and blobs live   (default ./.s2s-peer)
   --tcp <port>       TCP listen port                (default 0 = any free port)
   --ws <port>        WebSocket port for browsers    (default 0)
+  --webrtc <port>    UDP port for WebRTC Direct     (default 0)
   --connect <addr>   dial this multiaddr on start   (repeatable)
   --no-lan           do not announce on the local network
   --dht              join the Kademlia DHT
@@ -71,8 +74,11 @@ if (values.name && !s2s.store.profiles.has(s2s.me)) {
 
 const peer = createNodePeer({
   s2s,
+  privateKey: await loadOrCreateNetworkKey(values.dir),
+  datastore: await openNetworkDatastore(values.dir),
   tcpPort: Number(values.tcp),
   wsPort: Number(values.ws),
+  webrtcPort: Number(values.webrtc),
   lan: values.lan && !values['no-lan'],
   relay: values.relay,
   dht: values.dht,

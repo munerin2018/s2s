@@ -3,9 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' blob: data: ws: wss:; base-uri 'none'; form-action 'none'; object-src 'none'" />
+    <!--
+      `connect-src` has to allow WebRTC's signalling fetches and the WebSocket
+      schemes. WebRTC peer connections themselves are governed by
+      `webrtc-src`, which no browser enforces yet, so there is nothing to add
+      for the transport that actually carries the data.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' blob: data: ws: wss: https:; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
     <meta name="theme-color" content="#0b0d12" />
     <meta name="description" content="S2S - サーバーのない完全P2P型SNS" />
+
+    <!--
+      Home-screen app on iOS. Safari ignores the web app manifest's `display`
+      field, so standalone mode needs its own meta tag, and it will not take an
+      SVG for the icon - hence the PNG.
+    -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-180.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="S2S" />
+
     <title>S2S</title>
   </head>
   <body>

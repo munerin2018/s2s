@@ -4,8 +4,11 @@ packages/ui/dist/
 rust/s2s-peer/target/
 apps/desktop/release/
 
-# the Capacitor Android project is generated; `npm run mobile:build` recreates it
+# the Capacitor native projects are generated, not authored:
+#   android  `npm run mobile:build` recreates it
+#   ios      `npx cap add ios` recreates it, and it only builds on a Mac
 apps/mobile/android/
+apps/mobile/ios/
 apps/mobile/www/
 
 # peer data directories: these hold account private keys

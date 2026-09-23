@@ -31,6 +31,9 @@ export class S2SNetwork extends EventTarget {
    * @param {any[]} [opts.peerDiscovery]
    * @param {string[]} [opts.listen]
    * @param {object} [opts.services] extra libp2p services (relay server, dht)
+   * @param {object} [opts.privateKey] persisted libp2p key, so the peer id survives a restart
+   * @param {object} [opts.datastore] persisted store, so WebRTC cert hashes survive a restart
+   * @param {object} [opts.connectionGater] override which addresses may be dialled
    * @param {(msg: string) => void} [opts.log]
    */
   constructor (opts) {
@@ -48,7 +51,16 @@ export class S2SNetwork extends EventTarget {
     const { transports, peerDiscovery = [], listen = [], services = {} } = this.opts
 
     this.libp2p = await createLibp2p({
+      // Both of these are optional, and both matter for an address that
+      // someone has written down. The peer id comes from the key, and a
+      // WebRTC Direct multiaddr carries a hash of the TLS certificate; leave
+      // either unset and libp2p invents a fresh one at every start, so the
+      // address a phone was paired with stops resolving the moment the
+      // desktop app restarts.
+      ...(this.opts.privateKey ? { privateKey: this.opts.privateKey } : {}),
+      ...(this.opts.datastore ? { datastore: this.opts.datastore } : {}),
       addresses: { listen },
+      ...(this.opts.connectionGater ? { connectionGater: this.opts.connectionGater } : {}),
       transports: [...transports, circuitRelayTransport()],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],

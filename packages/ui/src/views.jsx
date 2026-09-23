@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Composer, Empty, MediaGrid, PostCard, Sheet, ago, shortId, useBlobUrl } from './parts.jsx'
+import { PairingCode } from './pairing-code.jsx'
 
 /* ---- Twitter mode ------------------------------------------------------ */
 
@@ -401,14 +402,7 @@ export function Settings ({ snap, adapter, status, act, refreshStatus, bootstrap
         </div>
         {status?.peerId && <code className="mono">{status.peerId}</code>}
 
-        {status?.addresses?.length > 0 && (
-          <>
-            <div className="small muted">
-              自分のアドレス（他の端末に貼り付けると繋がります）
-            </div>
-            {status.addresses.map((a) => <code className="mono" key={a}>{a}</code>)}
-          </>
-        )}
+        {status?.addresses?.length > 0 && <PairingCode addresses={status.addresses} />}
 
         <button className="btn" onClick={() => act('sync')}>今すぐ同期</button>
 

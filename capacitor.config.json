@@ -7,8 +7,14 @@
     "webContentsDebuggingEnabled": true,
     "path": "apps/mobile/android"
   },
+  "ios": {
+    "path": "apps/mobile/ios",
+    "webContentsDebuggingEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false
+  },
   "server": {
     "androidScheme": "https",
+    "iosScheme": "capacitor",
     "cleartext": true
   }
 }

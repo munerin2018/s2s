@@ -54,6 +54,7 @@
   .pill b { color: var(--text); font-weight: 600; }
 
   .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+  .small-note { color: var(--muted); font-size: 13.5px; margin: 14px 0 0; }
   .btn {
     display: inline-block; text-decoration: none;
     border-radius: 11px; padding: 12px 22px; font-weight: 600; font-size: 15px;
@@ -161,13 +162,15 @@
     <div class="pills">
       <span class="pill"><b>維持費ゼロ</b></span>
       <span class="pill">アカウント登録なし</span>
-      <span class="pill">PC / スマホ / Web</span>
+      <span class="pill">PC / iPhone / Android / Web</span>
       <span class="pill">AGPL-3.0</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#download">ダウンロード</a>
+      <a class="btn primary" href="app/">今すぐ開く</a>
+      <a class="btn" href="#download">ダウンロード</a>
       <a class="btn" href="https://github.com/munerin2018/s2s">GitHub で見る</a>
     </div>
+    <p class="small-note">インストール不要。開いた瞬間にあなたの鍵が作られます。</p>
   </div>
 </header>
 
@@ -286,15 +289,20 @@
         <strong>PC 版</strong>
         <span>Windows / macOS / Linux。ソースから <code class="inline">npm run desktop</code> で起動します。</span>
       </a>
-      <a href="https://github.com/munerin2018/s2s/releases/latest">
-        <span class="ico">📱</span>
-        <strong>Android APK</strong>
-        <span>S2S-android.apk。提供元不明のアプリの許可が必要です。</span>
+      <a href="app/">
+        <span class="ico">🍎</span>
+        <strong>iPhone / iPad</strong>
+        <span>Web 版を開いて「ホーム画面に追加」。App Store も Apple の開発者登録も要りません。</span>
       </a>
       <a href="https://github.com/munerin2018/s2s/releases/latest">
+        <span class="ico">🤖</span>
+        <strong>Android APK</strong>
+        <span>S2S-android.apk。提供元不明のアプリの許可が必要です。Web 版でも同じことができます。</span>
+      </a>
+      <a href="app/">
         <span class="ico">🌐</span>
         <strong>Web 版</strong>
-        <span>完全な静的ファイル。好きな静的ホスティングに置けます。</span>
+        <span>ここで開けます。完全な静的ファイルなので、自分のホスティングに置くこともできます。</span>
       </a>
       <a href="https://github.com/munerin2018/s2s/releases/latest">
         <span class="ico">🦀</span>
@@ -322,6 +330,49 @@ node scripts/peer.js   <span class="c"># 画面なしの常時起動ピア</span
   </div>
 </section>
 
+<section id="ios">
+  <div class="wrap">
+    <h2>iPhone で使う</h2>
+    <p class="lede">App Store には出せません。その代わり、審査も開発者登録も要りません。</p>
+
+    <ol class="steps">
+      <li>
+        <h3>Safari で Web 版を開く</h3>
+        <p><a href="app/">この Web 版</a>を <b>Safari で</b>開きます（Chrome ではホーム画面追加が正しく動きません）。</p>
+      </li>
+      <li>
+        <h3>「ホーム画面に追加」</h3>
+        <p>共有ボタン → 「ホーム画面に追加」。アイコンが並び、次からは全画面のアプリとして開きます。</p>
+      </li>
+      <li>
+        <h3>PC 版の QR をカメラで読む</h3>
+        <p>PC 版の「設定」タブに QR コードが出ています。<b>iPhone の標準カメラで読むだけ</b>で、アプリが開いてそのまま繋がります。アドレスを手で打つ必要はありません。</p>
+      </li>
+    </ol>
+
+    <div class="note blue">
+      <b>なぜ App Store ではないのか。</b>
+      iOS にネイティブアプリを配るには Apple Developer Program が必要で、年 99 ドルかかります。
+      <b>維持費ゼロ</b>という前提とまっすぐ衝突するので、ここでは採っていません。
+      ホーム画面に追加した Web 版は、見た目も操作も普通のアプリと変わりません。
+    </div>
+
+    <h3>iPhone だからこその注意点</h3>
+    <ul class="plain">
+      <li><b>鍵のバックアップは必ず取ってください。</b>iOS は、しばらく使っていない Web アプリの保存データを自分で消すことがあります。消えると<b>アカウントは戻りません</b>。設定タブの「秘密鍵を表示する」から控えてください。</li>
+      <li><b>アプリを閉じている間は同期しません。</b>iOS は Web アプリをバックグラウンドで動かし続けないので、開いている間だけ繋がります。これは Android の Web 版も同じです。</li>
+      <li><b>同じ Wi-Fi にいる必要があります。</b>PC 版を自動では見つけられないので、最初の 1 回だけ QR で教えます。</li>
+    </ul>
+
+    <div class="note">
+      <b>ネイティブの iOS アプリを自分でビルドしたい場合。</b>
+      Mac と Xcode があれば <code class="inline">npx cap add ios</code> で作れます。
+      手順は <a href="https://github.com/munerin2018/s2s/blob/main/docs/IOS.md">docs/IOS.md</a> に書いてあります。
+      ただし実機に入れるには結局 Apple のアカウントが要ります（無料アカウントなら 7 日で期限切れ）。
+    </div>
+  </div>
+</section>
+
 <section id="usage">
   <div class="wrap">
     <h2>使い方</h2>
@@ -336,7 +387,7 @@ node scripts/peer.js   <span class="c"># 画面なしの常時起動ピア</span
       <li>
         <h3>2 台目をつなぐ</h3>
         <p><b>PC どうしなら、同じ Wi-Fi にいるだけで自動的に見つかります。</b>設定は要りません（mDNS）。</p>
-        <p>スマホと Web 版はブラウザと同じ制約下にあるので自動発見ができません。設定タブに上のアドレスを貼って「接続」を押してください。</p>
+        <p>スマホと Web 版はブラウザと同じ制約下にあるので自動発見ができません。ただし <b>PC 版の設定タブに出る QR コードをスマホのカメラで読む</b>だけで済みます。手で貼り付ける必要はありません。</p>
         <pre><span class="c"># Web 版なら URL に書いておけば自動接続します</span>
 index.html#peer=/ip4/192.168.0.10/tcp/4002/ws/p2p/12D3Koo...</pre>
       </li>
@@ -390,6 +441,7 @@ index.html#peer=/ip4/192.168.0.10/tcp/4002/ws/p2p/12D3Koo...</pre>
 <footer>
   <div class="wrap">
     <p>
+      <a href="app/">Web 版を開く</a>·
       <a href="https://github.com/munerin2018/s2s">GitHub</a>·
       <a href="https://github.com/munerin2018/s2s/blob/main/docs/PROTOCOL.md">プロトコル仕様</a>·
       <a href="https://github.com/munerin2018/s2s/blob/main/docs/ARCHITECTURE.md">構成</a>·

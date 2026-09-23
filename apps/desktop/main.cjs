@@ -46,13 +46,14 @@ protocol.registerSchemesAsPrivileged([
 
 async function loadModules () {
   const url = (rel) => pathToFileURL(join(__dirname, '..', '..', rel)).href
-  const [core, storeNode, net, adapter] = await Promise.all([
+  const [core, storeNode, net, keys, adapter] = await Promise.all([
     import(url('packages/core/src/s2s.js')),
     import(url('packages/core/src/store-node.js')),
     import(url('packages/net/src/platform-node.js')),
+    import(url('packages/net/src/node-keys.js')),
     import(url('packages/ui/src/adapter/local.js'))
   ])
-  return { S2S: core.S2S, ...storeNode, ...net, ...adapter }
+  return { S2S: core.S2S, ...storeNode, ...net, ...keys, ...adapter }
 }
 
 async function createPeer () {
@@ -69,8 +70,18 @@ async function createPeer () {
 
   peer = ui.createNodePeer({
     s2s,
-    tcpPort: Number(process.env.S2S_TCP_PORT ?? 0),
-    wsPort: Number(process.env.S2S_WS_PORT ?? 0),
+    // Persisted so that an address someone pasted into their phone keeps
+    // working after this app restarts.
+    privateKey: await ui.loadOrCreateNetworkKey(dir),
+    datastore: await ui.openNetworkDatastore(dir),
+    // Fixed ports rather than 0. A stable key and certificate are only half
+    // of a stable address - the port is in there too, and "paste this into
+    // your phone once" stops being true if it moves on every launch. Two
+    // desktop peers on one machine would collide, which is rare enough to be
+    // worth the trade and is what the env vars are for.
+    tcpPort: Number(process.env.S2S_TCP_PORT ?? 4001),
+    wsPort: Number(process.env.S2S_WS_PORT ?? 4002),
+    webrtcPort: Number(process.env.S2S_WEBRTC_PORT ?? 4003),
     relay: true,
     lan: true,
     dht: process.env.S2S_DHT === '1',
@@ -165,6 +176,19 @@ function runSmokeTest () {
       'window.s2sBridge.act("thread", { board: "smoke", title: "t", text: "x" }).then(r => r.kind === "thread")'
     )
     ok &= await check('peer is listening', 'window.s2sBridge.status().then(s => s.addresses.length > 0)')
+
+    // The pairing QR is the only way onto iOS without typing a multiaddr by
+    // hand, so it is worth failing the build over.
+    await win.webContents.executeJavaScript("document.querySelectorAll('.nav button')[5].click()")
+    await sleep(2500)
+    ok &= await check(
+      'pairing QR renders on the settings screen',
+      '!!document.querySelector("img[alt=\'ペアリング用QRコード\']")'
+    )
+    ok &= await check(
+      'the address offered for pairing is one a browser can use',
+      'document.body.innerText.includes("/webrtc-direct/")'
+    )
 
     if (process.env.S2S_SHOT) {
       const image = await win.webContents.capturePage()

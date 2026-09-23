@@ -6,11 +6,12 @@
 サーバーを持たない P2P 型 SNS。Twitter 型のタイムライン、Instagram 型のメディア一覧、
 2ch 型の掲示板を、ひとつのイベントログの上に載せています。
 
-**PC アプリ / スマホアプリ / Web 版**の3形態があり、UI のコードは1つです。
+**PC アプリ / iPhone / Android / Web 版**の4通りで動き、UI のコードは1つです。
 
 維持費はゼロです。アカウントサーバーも、DB も、CDN も、リレーの契約もありません。
 投稿はあなたの端末の署名付きログに追記され、つながったピアへ直接複製されます。
 
+🚀 [Web 版を開く](https://munerin2018.github.io/s2s/app/)（インストール不要） ·
 📖 [紹介ページ](https://munerin2018.github.io/s2s/) ·
 ⬇️ [ダウンロード](https://github.com/munerin2018/s2s/releases/latest) ·
 📐 [プロトコル仕様](docs/PROTOCOL.md)
@@ -67,7 +68,16 @@ node scripts/peer.js --dir .\.peer-b --name テスト用ピア --post "こんに
 **同じ Wi-Fi なら何も設定しなくても互いを見つけます**（mDNS）。
 PC アプリのタイムラインに「こんにちは」が出てくれば成功です。
 
-### 3. スマホアプリ
+### 3. iPhone
+
+Safari で [Web 版](https://munerin2018.github.io/s2s/app/) を開き、
+共有ボタンから「ホーム画面に追加」。App Store も Apple の開発者登録も要りません。
+
+PC 版の「設定」タブに出ている **QR コードを iPhone のカメラで読む**と、そのまま繋がります。
+
+詳しくは [docs/IOS.md](docs/IOS.md)。
+
+### 4. Android
 
 すでにビルド済みの APK があります：
 
@@ -84,7 +94,7 @@ npm run mobile:build   # JDK 21+ と Android SDK が必要
 > 接続先を毎回入力したくない場合、Web 版なら
 > `index.html#peer=/ip4/.../ws/p2p/...` のようにURLに書けば自動で接続します。
 
-### 4. Web 版
+### 5. Web 版
 
 ```powershell
 npm run build:web
@@ -194,6 +204,7 @@ Rust 側の `mod tests` は、**プロトコルに従わないピア**を想定�
 - [docs/PROTOCOL.md](docs/PROTOCOL.md) — イベント形式、署名、同期プロトコルの仕様
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — なぜこの層構成なのか
 - [docs/LIMITS.md](docs/LIMITS.md) — 制約と、対処するなら何をするか
+- [docs/IOS.md](docs/IOS.md) — iPhone での使い方と、なぜ App Store に出さないのか
 - [docs/RUST.md](docs/RUST.md) — Rust ピアのビルド環境
 - [SECURITY.md](SECURITY.md) — 脆弱性の報告先と、設計上そうなっているもの
 

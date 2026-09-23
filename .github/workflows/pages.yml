@@ -1,13 +1,23 @@
 name: pages
 
-# Deploys site/ (the plain static landing page) to GitHub Pages. Separate from
-# ci.yml on purpose: this only needs to run when the site changes, and a
-# failure here should never be confused with a failure in the app's own tests.
+# Publishes two things to GitHub Pages:
+#
+#   /      the landing page from site/
+#   /app/  the web build of the app itself
+#
+# The app being hosted over https is not a nicety. A home-screen app on iOS is
+# a Safari page, and Safari will not let a https page open a `ws://`
+# connection - so the hosted build is the only way onto iOS without paying
+# Apple for a developer account, and WebRTC Direct is the only transport that
+# reaches a desktop peer from it.
 on:
   push:
     branches: [main]
     paths:
       - "site/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -28,9 +38,28 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:web
+
+      - name: assemble the site
+        run: |
+          mkdir -p _site/app
+          cp -r site/. _site/
+          cp -r packages/ui/dist/. _site/app/
+          # A visitor who lands on /app/ with no service worker yet should get
+          # the app, not a 404 from a path that only exists client-side.
+          cp packages/ui/dist/index.html _site/app/404.html
+          echo "--- published tree ---"
+          find _site -maxdepth 2 -type f | sort
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
