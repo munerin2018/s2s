@@ -19,7 +19,11 @@ createRoot(document.getElementById('root')).render(
  */
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => {
-    navigator.serviceWorker.register(new URL('sw.js', import.meta.url), { scope: './' })
+    // Resolved against the document, not `import.meta.url`. After bundling,
+    // this module lives in `assets/`, so resolving against it would look for
+    // `assets/sw.js` - a 404, and a scope the worker could not control even
+    // if it existed.
+    navigator.serviceWorker.register(new URL('sw.js', document.baseURI), { scope: './' })
       .catch((err) => console.warn('offline shell unavailable:', err.message))
   })
 }
