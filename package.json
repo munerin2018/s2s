@@ -15,6 +15,7 @@
     "desktop": "npm run build:web && node scripts/electron.cjs",
     "desktop:dev": "node scripts/electron.cjs",
     "peer": "node scripts/peer.js",
+    "demo-peer": "node scripts/demo-peer.js",
     "mobile:sync": "npm run build:web && cap copy android",
     "mobile:build": "node scripts/mobile-build.js",
     "mobile:release": "node scripts/mobile-build.js --release"

@@ -36,3 +36,5 @@ scripts/setup.ps1
 # release artifacts built by scripts/publish.ps1
 release/
 .tmp2/
+.tmp3/
+.demo-peer/
