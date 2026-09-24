@@ -47,6 +47,14 @@ export async function createIpcAdapter (bridge) {
     },
 
     exportKey: () => bridge.exportKey(),
+
+    /** The data lives in the main process; the window only holds settings. */
+    async wipe () {
+      try {
+        for (const k of Object.keys(localStorage)) if (k.startsWith('s2s.')) localStorage.removeItem(k)
+      } catch {}
+      await bridge.wipe()
+    },
     stop: async () => {}
   }
 }

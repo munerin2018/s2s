@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "updated": "2026-09-25",
+  "about": "Advisory hide list for the S2S apps. Authors (@...) and events (%...) listed here are hidden in apps that follow this list. It changes what those apps display and nothing else: no data is deleted from anyone's device. Users can stop following it in settings. Additions are made in response to reports at https://github.com/munerin2018/s2s/issues.",
+  "authors": [],
+  "events": []
+}

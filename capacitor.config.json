@@ -1,15 +1,13 @@
 {
-  "appId": "net.s2s.app",
+  "appId": "io.github.munerin2018.s2s",
   "appName": "S2S",
   "webDir": "packages/ui/dist",
   "android": {
     "allowMixedContent": true,
-    "webContentsDebuggingEnabled": true,
     "path": "apps/mobile/android"
   },
   "ios": {
     "path": "apps/mobile/ios",
-    "webContentsDebuggingEnabled": true,
     "limitsNavigationsToAppBoundDomains": false
   },
   "server": {

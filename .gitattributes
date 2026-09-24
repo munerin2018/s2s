@@ -8,3 +8,8 @@
 *.apk binary
 *.exe binary
 *.ico binary
+
+# Batch files must keep CRLF: cmd.exe mis-parses labels and `goto` in a .bat
+# with LF endings, and gradlew.bat is full of both.
+*.bat text eol=crlf
+*.cmd text eol=crlf

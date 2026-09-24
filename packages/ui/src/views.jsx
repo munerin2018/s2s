@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Composer, Empty, MediaGrid, PostCard, Sheet, ago, shortId, useBlobUrl } from './parts.jsx'
 import { PairingCode } from './pairing-code.jsx'
+import { SafetySettings, DeleteAccount } from './safety-settings.jsx'
 
 /* ---- Twitter mode ------------------------------------------------------ */
 
-export function Feed ({ snap, adapter, me, scope, setScope, nav, act, onReply }) {
+export function Feed ({ snap, adapter, me, scope, setScope, nav, act, onReply, onReport }) {
   return (
     <>
       <div className="tabs">
@@ -34,6 +35,7 @@ export function Feed ({ snap, adapter, me, scope, setScope, nav, act, onReply })
             me={me}
             onAct={act}
             onReply={onReply}
+            onReport={onReport}
             onOpen={(p) => nav({ view: 'thread', id: p.id })}
             onAuthor={(a) => nav({ view: 'author', author: a })}
           />
@@ -45,7 +47,7 @@ export function Feed ({ snap, adapter, me, scope, setScope, nav, act, onReply })
 
 /* ---- Instagram mode ---------------------------------------------------- */
 
-export function Gallery ({ snap, adapter, me, nav, act, onReply }) {
+export function Gallery ({ snap, adapter, me, nav, act, onReply, onReport }) {
   const [open, setOpen] = useState(null)
   const items = snap.items ?? []
 
@@ -72,6 +74,7 @@ export function Gallery ({ snap, adapter, me, nav, act, onReply }) {
             me={me}
             onAct={act}
             onReply={onReply}
+            onReport={(t) => { setOpen(null); onReport(t) }}
             onOpen={(p) => { setOpen(null); nav({ view: 'thread', id: p.id }) }}
             onAuthor={(a) => { setOpen(null); nav({ view: 'author', author: a }) }}
           />
@@ -158,7 +161,7 @@ export function BoardThreads ({ snap, adapter, nav }) {
   )
 }
 
-export function ThreadView ({ snap, adapter, me, act, nav }) {
+export function ThreadView ({ snap, adapter, me, act, nav, onReport }) {
   const t = snap.thread
   if (!t?.root) {
     return (
@@ -187,6 +190,15 @@ export function ThreadView ({ snap, adapter, me, act, nav }) {
           >
             {t.root.myLike === 1 ? '♥' : '♡'} {t.root.likes.up || ''}
           </button>
+          {t.root.authorId !== me && (
+            <button
+              title="通報"
+              aria-label="通報"
+              onClick={() => onReport({ eventId: t.root.id, authorId: t.root.authorId, name: t.root.author.name })}
+            >
+              ⚑
+            </button>
+          )}
         </div>
       </div>
 
@@ -206,6 +218,15 @@ export function ThreadView ({ snap, adapter, me, act, nav }) {
             </button>
             {p.authorId === me && (
               <button onClick={() => confirm('削除しますか？') && act('delete', { target: p.id })}>🗑</button>
+            )}
+            {p.authorId !== me && (
+              <button
+                title="通報"
+                aria-label="通報"
+                onClick={() => onReport({ eventId: p.id, authorId: p.authorId, name: p.author.name })}
+              >
+                ⚑
+              </button>
             )}
           </div>
         </div>
@@ -255,7 +276,7 @@ export function People ({ snap, adapter, act, nav }) {
   )
 }
 
-export function ProfileView ({ snap, adapter, me, act, nav, onReply }) {
+export function ProfileView ({ snap, adapter, me, act, nav, onReply, onReport }) {
   const who = snap.who
   if (!who) return <Empty icon="🔍" title="この人のことはまだ知りません" />
   const isSelf = who.id === me
@@ -283,6 +304,12 @@ export function ProfileView ({ snap, adapter, me, act, nav, onReply }) {
               >
                 {snap.isBlocked ? 'ブロック解除' : 'ブロック'}
               </button>
+              <button
+                className="btn tiny ghost"
+                onClick={() => onReport({ authorId: who.id, name: who.name })}
+              >
+                ⚑ 通報
+              </button>
             </div>
           )}
         </div>
@@ -297,6 +324,7 @@ export function ProfileView ({ snap, adapter, me, act, nav, onReply }) {
           me={me}
           onAct={act}
           onReply={onReply}
+          onReport={onReport}
           onOpen={(p) => nav({ view: 'thread', id: p.id })}
           onAuthor={(a) => nav({ view: 'author', author: a })}
         />
@@ -431,6 +459,10 @@ export function Settings ({ snap, adapter, status, act, refreshStatus, bootstrap
           保存しているイベント {snap.counts?.events ?? 0} 件 / 知っている人 {snap.counts?.authors ?? 0} 人
         </div>
       </div>
+
+      <SafetySettings adapter={adapter} />
+
+      <DeleteAccount adapter={adapter} />
 
       <div className="card">
         <h3>ログ</h3>

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAdapter, savedBootstrapPeers, saveBootstrapPeers } from './adapter/index.js'
 import { Composer, Empty, Sheet } from './parts.jsx'
+import { ReportSheet, TermsGate, termsAccepted } from './safety.jsx'
+import { applyFilter, isFollowingList, refreshList } from './moderation.js'
 import {
   BoardThreads, Boards, Feed, Gallery, Notifications, People, ProfileView, Settings, ThreadView
 } from './views.jsx'
@@ -32,6 +34,8 @@ export default function App () {
   const [snap, setSnap] = useState(null)
   const [status, setStatus] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
+  const [reporting, setReporting] = useState(null)
+  const [accepted, setAccepted] = useState(termsAccepted)
   const [bootstrap, setBootstrapState] = useState(savedBootstrapPeers)
   const scrollRef = useRef(null)
 
@@ -50,6 +54,23 @@ export default function App () {
       .catch((e) => setFatal(e))
     return () => { live = false }
   }, [])
+
+  /*
+   * The device-local hide list. Applied from cache immediately so nothing
+   * hidden flashes back into view at startup, then refreshed from the
+   * maintainer's list if the user follows it, then again every few hours.
+   */
+  useEffect(() => {
+    if (!adapter) return
+    let live = true
+    const sync = async (force) => {
+      if (isFollowingList()) await refreshList({ force })
+      if (live) await applyFilter(adapter).catch(() => {})
+    }
+    applyFilter(adapter).catch(() => {}).then(() => sync(false))
+    const t = setInterval(() => sync(false), 60 * 60 * 1000)
+    return () => { live = false; clearInterval(t) }
+  }, [adapter])
 
   /* Opening `...#peer=/ip4/.../ws/p2p/...` pairs this device with that peer. */
   useEffect(() => {
@@ -127,6 +148,10 @@ export default function App () {
 
   /* ---- render -------------------------------------------------------- */
 
+  if (!accepted) {
+    return <TermsGate onAccept={() => setAccepted(true)} />
+  }
+
   if (fatal) {
     return (
       <div className="app">
@@ -179,6 +204,7 @@ export default function App () {
           bootstrap={bootstrap}
           setBootstrap={setBootstrap}
           onReply={(item) => setReplyTo(item)}
+          onReport={(target) => setReporting(target)}
         />
       </main>
 
@@ -190,6 +216,15 @@ export default function App () {
           </button>
         ))}
       </nav>
+
+      {reporting && (
+        <ReportSheet
+          target={reporting}
+          adapter={adapter}
+          onClose={() => setReporting(null)}
+          onDone={() => refresh()}
+        />
+      )}
 
       {replyTo && (
         <Sheet title={`${replyTo.author.name} に返信`} onClose={() => setReplyTo(null)}>

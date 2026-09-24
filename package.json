@@ -16,7 +16,8 @@
     "desktop:dev": "node scripts/electron.cjs",
     "peer": "node scripts/peer.js",
     "mobile:sync": "npm run build:web && cap copy android",
-    "mobile:build": "node scripts/mobile-build.js"
+    "mobile:build": "node scripts/mobile-build.js",
+    "mobile:release": "node scripts/mobile-build.js --release"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

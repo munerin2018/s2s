@@ -1,0 +1,43 @@
+name: 通報 / Report content
+description: 規約に違反する投稿や利用者を管理者に知らせる / Report a post or user that breaks the terms
+title: "[通報] "
+labels: ["report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **投稿の内容をここに貼らないでください。** ID だけで確認できます。
+        このページは公開されます。
+        児童の性的虐待にあたる画像など重大な違法コンテンツは、
+        [インターネット・ホットラインセンター](https://www.internethotline.jp/) にも通報してください。
+
+        Please do **not** paste the content itself — the ids are enough, and this page is public.
+  - type: dropdown
+    id: reason
+    attributes:
+      label: 理由 / Reason
+      options:
+        - spam
+        - harassment
+        - sexual
+        - violence
+        - illegal
+        - impersonation
+        - other
+    validations:
+      required: true
+  - type: input
+    id: event
+    attributes:
+      label: 投稿 ID / Event id
+      description: "% から始まる ID（アプリが自動で入力します）"
+  - type: input
+    id: author
+    attributes:
+      label: 利用者 ID / Author id
+      description: "@ から始まる ID（アプリが自動で入力します）"
+  - type: textarea
+    id: detail
+    attributes:
+      label: 補足 / Details
+      description: 任意。内容そのものではなく、状況の説明をお願いします

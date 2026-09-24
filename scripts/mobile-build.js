@@ -99,12 +99,36 @@ console.log('\nrunning gradle…')
 // Windows does not search the working directory for executables, so the
 // wrapper has to be named relative to it explicitly.
 const gradlew = process.platform === 'win32' ? join(androidDir, 'gradlew.bat') : './gradlew'
-run(gradlew, ['assembleDebug'], {
+
+/*
+ * `--release` builds what Google Play takes: an Android App Bundle, signed
+ * with the upload key from ~/.s2s-release (see app/build.gradle). It also
+ * builds a release APK signed the same way, because an .aab cannot be
+ * installed directly and the release build is the one worth testing on a
+ * real phone before it is uploaded.
+ */
+const release = process.argv.includes('--release')
+const tasks = release ? ['bundleRelease', 'assembleRelease'] : ['assembleDebug']
+
+run(gradlew, tasks, {
   cwd: androidDir,
   env: { ...process.env, JAVA_HOME: jdk, ANDROID_HOME: sdk }
 })
 
-const apk = join(androidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
-console.log(`\nAPK: ${apk}`)
-console.log('install it with:')
-console.log(`  "${join(sdk, 'platform-tools', 'adb')}" install -r "${apk}"`)
+const outputs = join(androidDir, 'app', 'build', 'outputs')
+const adb = `"${join(sdk, 'platform-tools', 'adb')}"`
+if (release) {
+  const aab = join(outputs, 'bundle', 'release', 'app-release.aab')
+  const apk = join(outputs, 'apk', 'release', 'app-release.apk')
+  console.log(`\nAAB (upload this to Play Console): ${aab}`)
+  console.log(`APK (install to test):            ${apk}`)
+  if (!existsSync(apk) || !existsSync(aab)) {
+    console.log('\nNo signed output - is ~/.s2s-release/keystore.properties missing?')
+  }
+  console.log(`\n  ${adb} install -r "${apk}"`)
+} else {
+  const apk = join(outputs, 'apk', 'debug', 'app-debug.apk')
+  console.log(`\nAPK: ${apk}`)
+  console.log('install it with:')
+  console.log(`  ${adb} install -r "${apk}"`)
+}

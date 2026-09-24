@@ -30,6 +30,8 @@ let s2s = null
 let peer = null
 let ui = null // the ESM modules, loaded once Electron is up
 let peerReady = null // resolves when the log is loaded and libp2p is up
+let netStore = null  // the libp2p datastore, held so it can be closed before a wipe
+let dataDir = null
 
 function log (msg) {
   const line = { ts: Date.now(), msg }
@@ -60,6 +62,7 @@ async function createPeer () {
   ui = await loadModules()
 
   const dir = join(app.getPath('userData'), 'data')
+  dataDir = dir
   const backend = await new ui.FileBackend(dir).init()
   const identity = await ui.loadOrCreateSecret(dir)
 
@@ -73,7 +76,7 @@ async function createPeer () {
     // Persisted so that an address someone pasted into their phone keeps
     // working after this app restarts.
     privateKey: await ui.loadOrCreateNetworkKey(dir),
-    datastore: await ui.openNetworkDatastore(dir),
+    datastore: (netStore = await ui.openNetworkDatastore(dir)),
     // Fixed ports rather than 0. A stable key and certificate are only half
     // of a stable address - the port is in there too, and "paste this into
     // your phone once" stops being true if it moves on every launch. Two
@@ -159,6 +162,21 @@ function runSmokeTest () {
 
     let ok = true
     ok &= await check('bridge is exposed', 'typeof window.s2sBridge === "object"')
+
+    // A fresh profile has to see the terms before anything else, and must not
+    // get past them without ticking the box - store review checks exactly this.
+    ok &= await check('terms are shown on first launch', 'document.body.innerText.includes("S2S へようこそ")')
+    ok &= await check(
+      'the accept button is disabled until the box is ticked',
+      '[...document.querySelectorAll("button")].find(b => b.textContent.includes("同意して始める")).disabled'
+    )
+    await win.webContents.executeJavaScript(
+      'document.querySelector("input[type=checkbox]").click(); ' +
+      'new Promise(r => setTimeout(r, 200)).then(() => ' +
+      '[...document.querySelectorAll("button")].find(b => b.textContent.includes("同意して始める")).click())'
+    )
+    await sleep(2500)
+
     ok &= await check('app rendered', 'document.querySelectorAll(".nav button").length === 6')
     ok &= await check('identity resolved', 'window.s2sBridge.me().then(m => m.startsWith("@"))')
     ok &= await check('composer present', '!!document.querySelector(".composer textarea")')
@@ -237,6 +255,18 @@ function wireIpc () {
 
   ipcMain.handle('s2s:exportKey', async () => { await ready(); return s2s.exportKey() })
   ipcMain.handle('s2s:copy', (_e, text) => clipboard.writeText(String(text)))
+
+  // Account deletion: stop the peer, release the files it holds open (Windows
+  // will not delete a locked LevelDB), remove the data directory, and start
+  // again as a brand new, empty installation.
+  ipcMain.handle('s2s:wipe', async () => {
+    await ready()
+    await peer?.stop().catch(() => {})
+    await netStore?.close().catch(() => {})
+    await require('node:fs/promises').rm(dataDir, { recursive: true, force: true })
+    app.relaunch()
+    app.exit(0)
+  })
 }
 
 /* ---- boot -------------------------------------------------------------- */

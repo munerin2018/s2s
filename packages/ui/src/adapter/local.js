@@ -10,6 +10,15 @@ import { createBrowserPeer } from '../../../net/src/platform-browser.js'
 
 const LOG_LIMIT = 300
 
+/** Every key this app keeps in localStorage starts with `s2s.`. */
+export function clearLocalSettings () {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('s2s.')) localStorage.removeItem(k)
+  } catch {
+    // nothing stored, nothing to clear
+  }
+}
+
 export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
   const backend = await new IdbBackend().init()
   const identity = await loadOrCreateSecretIdb(backend)
@@ -89,6 +98,20 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
 
     // Async on both adapters so the UI never has to know which it is talking to.
     exportKey: async () => s2s.exportKey(),
+
+    /**
+     * Erase the account from this device: the key, the log, the media and
+     * every setting. There is no server copy to ask anyone to delete.
+     */
+    async wipe () {
+      await net.stop().catch(() => {})
+      backend.db?.close()
+      await new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase('s2s')
+        req.onsuccess = req.onerror = req.onblocked = () => resolve()
+      })
+      clearLocalSettings()
+    },
     stop: () => net.stop()
   }
 }
@@ -150,6 +173,18 @@ export async function runAction (s2s, net, action, p = {}) {
     case 'connect':   return { addr: await net.connect(p.addr) }
     case 'sync':      await net.syncAll(); return { ok: true }
     case 'subscribeBoard': net.subscribeBoard(p.board); return { ok: true }
+    case 'setFilter': s2s.setFilter(p); return { ok: true }
+    case 'deleteAllMine': {
+      // Best effort by nature: this reaches the peers that are online now and
+      // those that sync later from someone who received it. It cannot recall
+      // copies on devices that never reconnect - the privacy policy says so.
+      const mine = (s2s.store.logs.get(s2s.me) ?? []).filter((e) =>
+        e && ['post', 'reply', 'thread', 'repost'].includes(e.kind) && !s2s.store.isDeleted(e.id))
+      for (const e of mine) await s2s.remove(e.id)
+      await s2s.setProfile({ name: '', bio: '' })
+      await net.syncAll().catch(() => {})
+      return { deleted: mine.length }
+    }
     default: throw new Error(`unknown action: ${action}`)
   }
 }

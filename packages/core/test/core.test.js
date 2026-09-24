@@ -180,3 +180,44 @@ test('a peer cannot forge an event in someone else pretending to be them', async
   const res = await store.put(forged)
   assert.equal(res.ok, false)
 })
+
+test('the device-local filter hides authors and events without publishing anything', async () => {
+  const me = mk()
+  const troll = mk()
+  const friend = mk()
+
+  const bad = await troll.post({ text: 'spam spam' })
+  const also = await troll.post({ text: 'more spam' })
+  const good = await friend.post({ text: 'hello' })
+  const repost = await friend.repost(bad.id)
+
+  for (const p of [troll, friend]) {
+    for (const e of p.store.logRange(p.me, 1, 99)) await me.store.put(e)
+  }
+  const eventsBefore = me.store.events.size
+  assert.equal(me.views.global().length, 4)
+
+  // Hiding a single event: it goes, and so does a repost that points at it.
+  me.setFilter({ events: [bad.id] })
+  const texts = me.views.global().map((p) => p.text)
+  assert.ok(!texts.includes('spam spam'))
+  assert.ok(texts.includes('more spam'))
+  assert.equal(me.views.global().filter((p) => p.repostedBy).length, 0, 'a repost of a hidden event is hidden too')
+  assert.equal(me.views.thread(bad.id), null, 'hidden by link as well as in lists')
+
+  // Hiding an author: every post, and they drop out of the people list.
+  me.setFilter({ authors: [troll.me] })
+  assert.deepEqual(me.views.global().map((p) => p.text).sort(), ['hello'])
+  assert.ok(!me.views.people().some((p) => p.id === troll.me))
+
+  // You can never hide yourself by accident.
+  me.setFilter({ authors: [me.me] })
+  await me.post({ text: 'still mine' })
+  assert.ok(me.views.global().some((p) => p.text === 'still mine'))
+
+  // And none of it touched the log: the filter is not an event.
+  assert.equal(me.store.events.size, eventsBefore + 1)
+  assert.equal(good.author, friend.me)
+  assert.ok(also)
+  assert.ok(repost)
+})

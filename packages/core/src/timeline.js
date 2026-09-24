@@ -15,14 +15,21 @@ const isPostish = (k) => k === 'post' || k === 'repost' || k === 'thread'
 /**
  * @param {import('./store.js').S2SStore} store
  * @param {string} viewer author id of the local user
+ * @param {{ authors: Set<string>, events: Set<string> }} [filter]
+ *   Hidden on this device only, on top of the viewer's own signed blocks: the
+ *   events a user hid when reporting them, and whatever moderation list they
+ *   chose to follow. Deliberately not events - nothing here is published or
+ *   replicated, and nobody else's view changes because of it.
  */
-export function makeViews (store, viewer) {
-  const hidden = (authorId) => store.blocked(viewer).has(authorId)
+export function makeViews (store, viewer, filter = { authors: new Set(), events: new Set() }) {
+  const hidden = (authorId) =>
+    store.blocked(viewer).has(authorId) || (authorId !== viewer && filter.authors.has(authorId))
 
   const visible = (id) => {
     const e = store.get(id)
     if (!e) return false
     if (store.isDeleted(id)) return false
+    if (filter.events.has(id)) return false
     if (hidden(e.author)) return false
     return true
   }
@@ -35,7 +42,7 @@ export function makeViews (store, viewer) {
     let repostedBy = null
     if (e.kind === 'repost') {
       const target = store.get(e.content.target)
-      if (!target || store.isDeleted(target.id) || hidden(target.author)) return null
+      if (!target || !visible(target.id)) return null
       subject = target
       repostedBy = store.profile(e.author)
     }
@@ -143,7 +150,8 @@ export function makeViews (store, viewer) {
      */
     thread (rootId) {
       const root = store.get(rootId)
-      if (!root) return null
+      // A hidden thread stays hidden when reached by link, not only in lists.
+      if (!root || !visible(rootId)) return null
       const replies = (store.repliesByRoot.get(rootId) ?? [])
         .filter(visible)
         .map((id) => store.get(id))
@@ -194,6 +202,7 @@ export function makeViews (store, viewer) {
       const me = store.following(viewer)
       return store
         .knownAuthors()
+        .filter((a) => a === viewer || !hidden(a))
         .map((a) => ({
           ...store.profile(a),
           posts: store.logs.get(a)?.length ?? 0,

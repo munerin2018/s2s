@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 脆弱性の報告 / Security vulnerability
+    url: https://github.com/munerin2018/s2s/security/advisories/new
+    about: 公開 Issue ではなくこちらから / Please report privately

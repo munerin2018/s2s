@@ -105,7 +105,7 @@ function MediaItem ({ m, adapter, onOpen }) {
 
 /* ---- post card -------------------------------------------------------- */
 
-export function PostCard ({ item, adapter, me, onOpen, onReply, onAuthor, onAct }) {
+export function PostCard ({ item, adapter, me, onOpen, onReply, onAuthor, onAct, onReport }) {
   const mine = item.authorId === me
 
   return (
@@ -157,6 +157,15 @@ export function PostCard ({ item, adapter, me, onOpen, onReply, onAuthor, onAct 
               title="削除"
             >
               🗑
+            </button>
+          )}
+          {!mine && onReport && (
+            <button
+              onClick={() => onReport({ eventId: item.id, authorId: item.authorId, name: item.author.name })}
+              title="通報"
+              aria-label="通報"
+            >
+              ⚑
             </button>
           )}
         </div>

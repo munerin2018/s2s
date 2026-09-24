@@ -19,7 +19,8 @@ export class S2S extends EventTarget {
     super()
     this.identity = identity
     this.store = new S2SStore(backend ?? new MemoryBackend())
-    this.views = makeViews(this.store, identity.id)
+    this.filter = { authors: new Set(), events: new Set() }
+    this.views = makeViews(this.store, identity.id, this.filter)
     this.store.addEventListener('change', () => this.dispatchEvent(new Event('change')))
     this.store.addEventListener('event', (ev) => {
       this.dispatchEvent(new CustomEvent('event', { detail: ev.detail }))
@@ -104,6 +105,19 @@ export class S2S extends EventTarget {
 
   static newIdentity () { return createIdentity() }
   static importKey (text) { return importIdentity(text) }
+
+  /**
+   * Replace the device-local hide list. Mutated in place, so the views built
+   * in the constructor see it without being rebuilt.
+   * @param {{ authors?: string[], events?: string[] }} lists
+   */
+  setFilter ({ authors = [], events = [] } = {}) {
+    this.filter.authors.clear()
+    this.filter.events.clear()
+    for (const a of authors) if (typeof a === 'string') this.filter.authors.add(a)
+    for (const e of events) if (typeof e === 'string') this.filter.events.add(e)
+    this.dispatchEvent(new Event('change'))
+  }
 
   /** What we advertise to peers during sync. */
   haveVector () { return this.store.haveVector() }

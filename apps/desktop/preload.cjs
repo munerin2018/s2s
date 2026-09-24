@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('s2sBridge', {
   media: (blob) => ipcRenderer.invoke('s2s:media', blob),
   addMedia: (data) => ipcRenderer.invoke('s2s:addMedia', data),
   exportKey: () => ipcRenderer.invoke('s2s:exportKey'),
+  wipe: () => ipcRenderer.invoke('s2s:wipe'),
   copy: (text) => ipcRenderer.invoke('s2s:copy', text),
 
   onChange (fn) {
