@@ -27,6 +27,17 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!--
+          AdMob application ID. This is currently Google's public TEST app ID, which only ever
+          serves test ads (safe to ship, never earns revenue). Before a production release,
+          replace it with the real App ID from your own AdMob account (admob.google.com ->
+          Apps -> S2S -> App settings), and replace the test ad unit ID in
+          packages/ui/src/ads.js the same way.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
     </application>
 
     <!-- Permissions -->

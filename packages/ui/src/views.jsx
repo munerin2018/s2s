@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Avatar, Composer, Empty, MediaGrid, PostCard, Sheet, ago, shortId, useBlobUrl } from './parts.jsx'
+import { AdSlot, Avatar, Composer, Empty, MediaGrid, PostCard, Sheet, ago, shortId, useBlobUrl } from './parts.jsx'
+import { AD_EVERY } from './ads.js'
 import { PairingCode } from './pairing-code.jsx'
 import { SafetySettings, DeleteAccount } from './safety-settings.jsx'
 
@@ -27,18 +28,20 @@ export function Feed ({ snap, adapter, me, scope, setScope, nav, act, onReply, o
           </Empty>
         )
       ) : (
-        (snap.items ?? []).map((item) => (
-          <PostCard
-            key={item.cardId}
-            item={item}
-            adapter={adapter}
-            me={me}
-            onAct={act}
-            onReply={onReply}
-            onReport={onReport}
-            onOpen={(p) => nav({ view: 'thread', id: p.id })}
-            onAuthor={(a) => nav({ view: 'author', author: a })}
-          />
+        (snap.items ?? []).map((item, i) => (
+          <div key={item.cardId} className="feed-row">
+            {i > 0 && i % AD_EVERY === 0 && <AdSlot slotIndex={i} />}
+            <PostCard
+              item={item}
+              adapter={adapter}
+              me={me}
+              onAct={act}
+              onReply={onReply}
+              onReport={onReport}
+              onOpen={(p) => nav({ view: 'thread', id: p.id })}
+              onAuthor={(a) => nav({ view: 'author', author: a })}
+            />
+          </div>
         ))
       )}
     </>

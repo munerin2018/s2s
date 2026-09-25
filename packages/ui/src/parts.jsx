@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { showBannerForSlot, hideBannerIfSlot } from './ads.js'
 
 /* ---- small helpers ---------------------------------------------------- */
 
@@ -100,6 +101,39 @@ function MediaItem ({ m, adapter, onOpen }) {
       onClick={onOpen ? () => onOpen(url) : undefined}
       style={onOpen ? { cursor: 'zoom-in' } : undefined}
     />
+  )
+}
+
+/* ---- in-feed ad slot ---------------------------------------------------
+ * A regular card in the post list. While it's on screen, it asks the
+ * native layer to show a banner ad anchored to the bottom of the screen;
+ * once it scrolls out of view again the banner is hidden. This is what
+ * makes ads "flow" with the timeline every few posts, within the real
+ * limits of a WebView app (a banner ad can't be pixel-embedded between
+ * HTML elements - see packages/ui/src/ads.js for the full explanation).
+ */
+
+export function AdSlot ({ slotIndex }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) showBannerForSlot(slotIndex)
+        else hideBannerIfSlot(slotIndex)
+      },
+      { threshold: 0.4 }
+    )
+    io.observe(el)
+    return () => { io.disconnect(); hideBannerIfSlot(slotIndex) }
+  }, [slotIndex])
+
+  return (
+    <div ref={ref} className="ad-slot" aria-label="広告">
+      <span className="small">広告</span>
+    </div>
   )
 }
 

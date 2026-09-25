@@ -1,6 +1,6 @@
 {
   "name": "s2s",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "S2S - a fully peer-to-peer SNS with no servers and no running costs",
@@ -21,6 +21,7 @@
     "mobile:release": "node scripts/mobile-build.js --release"
   },
   "dependencies": {
+    "@capacitor-community/admob": "^8.1.0",
     "@capacitor/android": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@chainsafe/libp2p-gossipsub": "^14.1.2",
