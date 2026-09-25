@@ -29,6 +29,9 @@ apps/mobile/www/
 .DS_Store
 Thumbs.db
 
+# Google Play service account key and anything else secret-shaped
+.secrets/
+
 # personal notes and local workflow helpers, not part of the project
 はじめに.md
 scripts/setup.ps1
