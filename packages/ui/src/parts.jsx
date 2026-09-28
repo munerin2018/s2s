@@ -260,6 +260,12 @@ export function Composer ({ adapter, mode = 'post', placeholder, onDone, board, 
         await adapter.act('post', { text, media: attachments, board: board || undefined })
       }
       setText(''); setTitle(''); setMedia([])
+      // Dismiss the on-screen keyboard explicitly. Some Android WebViews
+      // don't repaint the composer's box when the field they were editing
+      // is cleared out from under them while still focused, and the input
+      // area is left visually stuck (a stray grey frame) until something
+      // else forces a layout pass.
+      document.activeElement?.blur?.()
       onDone?.()
     } catch (e2) {
       setErr(e2.message)
