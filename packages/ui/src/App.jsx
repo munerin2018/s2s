@@ -128,6 +128,36 @@ export default function App () {
     return res
   }, [adapter, refresh])
 
+  // A dropped WebRTC connection (screen lock, Wi-Fi hiccup, backgrounding)
+  // otherwise sits at 0 connected peers until someone reopens Settings and
+  // presses 接続 again - the bootstrap list only gets dialed once, at
+  // startup. This retries the saved peers on a timer, from any screen, so
+  // "it stopped syncing" resolves itself instead of needing a manual fix.
+  useEffect(() => {
+    if (!adapter || bootstrap.length === 0) return
+    let cancelled = false
+    let inFlight = false
+    const tryReconnect = async () => {
+      if (inFlight || cancelled) return
+      const current = await adapter.status().catch(() => null)
+      if (cancelled || (current?.peers?.length ?? 0) > 0) return
+      inFlight = true
+      for (const addr of bootstrap) {
+        if (cancelled) break
+        try {
+          await act('connect', { addr })
+          break
+        } catch {
+          // that saved peer didn't answer - try the next one
+        }
+      }
+      inFlight = false
+    }
+    tryReconnect()
+    const t = setInterval(tryReconnect, 15000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [adapter, bootstrap, act])
+
   const nav = useCallback((q) => {
     setStack((s) => [...s, q])
     scrollRef.current?.scrollTo({ top: 0 })
