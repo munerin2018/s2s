@@ -109,6 +109,11 @@ function createWindow () {
     minHeight: 560,
     backgroundColor: '#0b0d12',
     title: 'S2S',
+    // Same artwork as the Android launcher icon and the web/PWA favicon
+    // (packages/ui/public/icons/icon-512.png) - kept as its own file here
+    // so the desktop app doesn't reach across into packages/ui just for
+    // this, and is ready for an installer icon later too.
+    icon: join(__dirname, 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -272,6 +277,9 @@ function wireIpc () {
 /* ---- boot -------------------------------------------------------------- */
 
 app.whenReady().then(async () => {
+  // macOS keeps its own separate dock icon from the window icon.
+  if (process.platform === 'darwin') app.dock?.setIcon(join(__dirname, 'icon.png'))
+
   protocol.handle('app', async (request) => {
     const url = new URL(request.url)
     // Everything is served from the built UI directory; nothing above it.
