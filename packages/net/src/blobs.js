@@ -101,6 +101,17 @@ export class BlobFetcher {
     this.drain()
   }
 
+  /**
+   * Someone new is here, and they may hold what nobody else did. Give every
+   * missing blob a fresh set of attempts instead of leaving earlier give-ups
+   * permanent - otherwise media posted while we were away never shows up.
+   */
+  async rescan (events) {
+    this.failed.clear()
+    for (const e of events) await this.consider(e)
+    this.drain()
+  }
+
   drain () {
     if (this.wanted.size === 0) return
     const peers = this.libp2p.getPeers()

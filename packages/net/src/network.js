@@ -193,7 +193,7 @@ export class S2SNetwork extends EventTarget {
       this.dispatchEvent(new Event('peers'))
       // Give identify a moment to settle before we ask for their logs.
       setTimeout(() => this.syncPeer(evt.detail), 800)
-      this.blobFetcher.drain()
+      this.blobFetcher.rescan(this.s2s.store.events.values()).catch(() => {})
     })
 
     // A peer that closed the app and reopened it dials in again while its
