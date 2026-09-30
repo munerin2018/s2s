@@ -109,6 +109,7 @@ export class S2SNetwork extends EventTarget {
 
   async stop () {
     clearInterval(this.resyncTimer)
+    clearInterval(this.keepaliveTimer)
     clearTimeout(this.forwardTimer)
     await this.libp2p?.stop()
   }
@@ -191,6 +192,24 @@ export class S2SNetwork extends EventTarget {
 
     // Periodic reconciliation catches anything gossip missed.
     this.resyncTimer = setInterval(() => this.syncAll(), 30_000)
+
+    // WebRTC-direct connections can go quiet - a NAT binding expiring, a
+    // phone's radio idling down - without libp2p ever hearing about it: the
+    // stream muxer only notices once someone tries to actually send
+    // something over it. Pinging periodically keeps the underlying
+    // transport exercised and turns a silently-dead connection into a real
+    // peer:disconnect quickly, so the reconnect watchdog on the UI side has
+    // something to redial instead of the app just sitting at zero.
+    this.keepaliveTimer = setInterval(async () => {
+      for (const peer of this.libp2p.getPeers()) {
+        try {
+          await this.libp2p.services.ping.ping(peer, { signal: AbortSignal.timeout(10_000) })
+        } catch {
+          this.log(`ping to ${short(peer.toString())} failed, hanging up`)
+          await this.libp2p.hangUp(peer).catch(() => {})
+        }
+      }
+    }, 20_000)
   }
 
   /**
