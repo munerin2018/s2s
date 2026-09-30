@@ -175,6 +175,13 @@ export class S2SNetwork extends EventTarget {
   #wirePeers () {
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const id = evt.detail.id
+      // mDNS re-announces every peer on the LAN every few seconds, so this
+      // fires again and again for someone we are already talking to. Dialing
+      // anyway opens a second, redundant connection to the same peer - each
+      // one gets its own 'peer:connect' and starts its own sync, and the two
+      // syncs racing over separate connections is what was cutting each
+      // other's stream off mid-read (surfacing as "unexpected end of input").
+      if (this.libp2p.getConnections(id).length > 0) return
       this.libp2p.dial(id).catch(() => {})
     })
 
@@ -186,7 +193,8 @@ export class S2SNetwork extends EventTarget {
       this.blobFetcher.drain()
     })
 
-    this.libp2p.addEventListener('peer:disconnect', () => {
+    this.libp2p.addEventListener('peer:disconnect', (evt) => {
+      this.log(`disconnected from ${short(evt.detail.toString())}`)
       this.dispatchEvent(new Event('peers'))
     })
 
@@ -200,14 +208,31 @@ export class S2SNetwork extends EventTarget {
     // transport exercised and turns a silently-dead connection into a real
     // peer:disconnect quickly, so the reconnect watchdog on the UI side has
     // something to redial instead of the app just sitting at zero.
+    let pinging = false
     this.keepaliveTimer = setInterval(async () => {
-      for (const peer of this.libp2p.getPeers()) {
-        try {
-          await this.libp2p.services.ping.ping(peer, { signal: AbortSignal.timeout(10_000) })
-        } catch {
-          this.log(`ping to ${short(peer.toString())} failed, hanging up`)
-          await this.libp2p.hangUp(peer).catch(() => {})
+      // The ping protocol allows at most one outbound stream per peer at a
+      // time (it's in the spec, not just this implementation) - if a run of
+      // this loop is still waiting on a slow peer when the timer fires again,
+      // starting a second round trips that limit on whatever peer both runs
+      // land on, and "too many outbound streams" was being read as a dead
+      // connection and hanging up a perfectly healthy one.
+      if (pinging) return
+      pinging = true
+      try {
+        for (const peer of this.libp2p.getPeers()) {
+          try {
+            await this.libp2p.services.ping.ping(peer, { signal: AbortSignal.timeout(10_000) })
+          } catch (err) {
+            // Our own overlapping call, not the peer being unreachable - the
+            // stream will free itself; hanging up here would drop a live
+            // connection over nothing.
+            if (/too many.*outbound/i.test(err?.message ?? '')) continue
+            this.log(`ping to ${short(peer.toString())} failed (${err.message}), hanging up`)
+            await this.libp2p.hangUp(peer).catch(() => {})
+          }
         }
+      } finally {
+        pinging = false
       }
     }, 20_000)
   }

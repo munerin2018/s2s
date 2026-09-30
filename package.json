@@ -1,6 +1,6 @@
 {
   "name": "s2s",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "S2S - a fully peer-to-peer SNS with no servers and no running costs",
