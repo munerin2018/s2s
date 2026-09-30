@@ -172,6 +172,7 @@ export async function runAction (s2s, net, action, p = {}) {
     case 'profile':   return pick(await s2s.setProfile(p))
     case 'connect':   return { addr: await net.connect(p.addr) }
     case 'sync':      await net.syncAll(); return { ok: true }
+    case 'checkPeers': return { peers: await net.checkPeers() }
     case 'subscribeBoard': net.subscribeBoard(p.board); return { ok: true }
     case 'setFilter': s2s.setFilter(p); return { ok: true }
     case 'deleteAllMine': {

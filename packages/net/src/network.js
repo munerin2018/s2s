@@ -43,7 +43,7 @@ export class S2SNetwork extends EventTarget {
     this.log = opts.log ?? (() => {})
     this.libp2p = null
     this.blobFetcher = null
-    this.syncing = new Set()
+    this.syncing = new Map()
     this.stats = { received: 0, published: 0, rejected: 0 }
   }
 
@@ -187,14 +187,31 @@ export class S2SNetwork extends EventTarget {
 
     this.libp2p.addEventListener('peer:connect', (evt) => {
       this.log(`connected to ${short(evt.detail.toString())}`)
+      // A sync still hanging on this peer's previous, now-dead connection
+      // (a phone that was closed and reopened) must not block the new one.
+      this.syncing.delete(evt.detail.toString())
       this.dispatchEvent(new Event('peers'))
       // Give identify a moment to settle before we ask for their logs.
       setTimeout(() => this.syncPeer(evt.detail), 800)
       this.blobFetcher.drain()
     })
 
+    // A peer that closed the app and reopened it dials in again while its
+    // previous connection is still listed here, dead. Keep only the newest,
+    // otherwise streams can land on the dead one and fail.
+    this.libp2p.addEventListener('connection:open', (evt) => {
+      const fresh = evt.detail
+      for (const old of this.libp2p.getConnections(fresh.remotePeer)) {
+        // The age check leaves simultaneous dials from both ends alone, where
+        // each side closing "the other one" would drop both.
+        if (old.id === fresh.id || fresh.timeline.open - old.timeline.open < 10_000) continue
+        old.close().catch(() => old.abort?.(new Error('superseded')))
+      }
+    })
+
     this.libp2p.addEventListener('peer:disconnect', (evt) => {
       this.log(`disconnected from ${short(evt.detail.toString())}`)
+      this.syncing.delete(evt.detail.toString())
       this.dispatchEvent(new Event('peers'))
     })
 
@@ -227,8 +244,11 @@ export class S2SNetwork extends EventTarget {
             // stream will free itself; hanging up here would drop a live
             // connection over nothing.
             if (/too many.*outbound/i.test(err?.message ?? '')) continue
-            this.log(`ping to ${short(peer.toString())} failed (${err.message}), hanging up`)
-            await this.libp2p.hangUp(peer).catch(() => {})
+            // Close only the connection that was pinged, not every
+            // connection to this peer - a newer, healthy one may exist.
+            this.log(`ping to ${short(peer.toString())} failed (${err.message}), closing that connection`)
+            const [conn] = this.libp2p.getConnections(peer)
+            await conn?.close().catch(() => conn.abort?.(err))
           }
         }
       } finally {
@@ -258,7 +278,8 @@ export class S2SNetwork extends EventTarget {
   async syncPeer (peerId) {
     const key = peerId.toString()
     if (this.syncing.has(key)) return
-    this.syncing.add(key)
+    const token = {}
+    this.syncing.set(key, token)
     try {
       const res = await syncWith(this.libp2p, this.s2s, peerId, { log: this.log })
       if (res.received) {
@@ -268,12 +289,31 @@ export class S2SNetwork extends EventTarget {
     } catch (err) {
       this.log(`sync with ${short(key)} failed: ${err.message}`)
     } finally {
-      this.syncing.delete(key)
+      if (this.syncing.get(key) === token) this.syncing.delete(key)
     }
   }
 
   async syncAll () {
-    for (const peer of this.libp2p.getPeers()) await this.syncPeer(peer)
+    // In parallel: one peer stuck on a dead connection would otherwise hold
+    // up everyone behind it for the full sync timeout.
+    await Promise.allSettled(this.libp2p.getPeers().map((p) => this.syncPeer(p)))
+  }
+
+  /**
+   * Quickly drop connections that died while we weren't looking - an app
+   * that was backgrounded or closed and reopened still lists them as live.
+   */
+  async checkPeers (timeoutMs = 4_000) {
+    await Promise.allSettled(this.libp2p.getPeers().map(async (peer) => {
+      try {
+        await this.libp2p.services.ping.ping(peer, { signal: AbortSignal.timeout(timeoutMs) })
+      } catch (err) {
+        if (/too many.*outbound/i.test(err?.message ?? '')) return
+        this.log(`${short(peer.toString())} did not answer after resume, hanging up`)
+        await this.libp2p.hangUp(peer).catch(() => {})
+      }
+    }))
+    return this.libp2p.getPeers().length
   }
 
   /**

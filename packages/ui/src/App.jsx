@@ -155,7 +155,22 @@ export default function App () {
     }
     tryReconnect()
     const t = setInterval(tryReconnect, 15000)
-    return () => { cancelled = true; clearInterval(t) }
+
+    // Coming back from the background (or reopening the app), the old
+    // connections are usually dead but still listed, so the check above
+    // would think we're fine. Drop the dead ones, redial, then catch up.
+    const onResume = async () => {
+      if (document.visibilityState !== 'visible' || cancelled) return
+      await adapter.act('checkPeers').catch(() => {})
+      await tryReconnect()
+      await act('sync').catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onResume)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onResume)
+    }
   }, [adapter, bootstrap, act])
 
   const nav = useCallback((q) => {
