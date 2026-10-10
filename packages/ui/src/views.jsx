@@ -414,7 +414,7 @@ export function Settings ({ snap, adapter, status, act, refreshStatus, bootstrap
 
         {bootstrap.length > 0 && (
           <>
-            <div className="small muted">起動時に試すピア</div>
+            <div className="small muted">保存済みピア（切断時は自動再接続）</div>
             {bootstrap.map((b) => (
               <div className="row" key={b}>
                 <code className="mono grow">{b}</code>
@@ -432,6 +432,16 @@ export function Settings ({ snap, adapter, status, act, refreshStatus, bootstrap
           {' · '}接続中のピア: {status?.peers?.length ?? 0}
         </div>
         {status?.peerId && <code className="mono">{status.peerId}</code>}
+        {(status?.peers ?? []).map((peer) => (
+          <div className="row" key={peer}>
+            <span className="small" style={{ color: 'var(--good)' }}>接続中</span>
+            <code className="mono grow">{peer}</code>
+          </div>
+        ))}
+        <div className="small muted">
+          モバイル通信では、自宅LAN内のアドレスには接続できません。外部から到達できるピアのアドレスを保存してください。
+        </div>
+
 
         {status?.addresses?.length > 0 && <PairingCode addresses={status.addresses} />}
 

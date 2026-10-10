@@ -115,7 +115,7 @@ export default function App () {
   useEffect(() => {
     if (!adapter) return
     refreshStatus()
-    const off = adapter.onChange(() => refresh())
+    const off = adapter.onChange(() => { refresh(); refreshStatus() })
     const t = setInterval(refreshStatus, 5000)
     return () => { off(); clearInterval(t) }
   }, [adapter, refresh, refreshStatus])
@@ -128,50 +128,50 @@ export default function App () {
     return res
   }, [adapter, refresh])
 
-  // A dropped WebRTC connection (screen lock, Wi-Fi hiccup, backgrounding)
-  // otherwise sits at 0 connected peers until someone reopens Settings and
-  // presses 接続 again - the bootstrap list only gets dialed once, at
-  // startup. This retries the saved peers on a timer, from any screen, so
-  // "it stopped syncing" resolves itself instead of needing a manual fix.
+  // Retry every saved peer independently: one live connection must not hide
+  // another peer that holds the media we need.
   useEffect(() => {
-    if (!adapter || bootstrap.length === 0) return
+    if (!adapter) return
     let cancelled = false
     let inFlight = false
     const tryReconnect = async () => {
       if (inFlight || cancelled) return
-      const current = await adapter.status().catch(() => null)
-      if (cancelled || (current?.peers?.length ?? 0) > 0) return
       inFlight = true
-      for (const addr of bootstrap) {
-        if (cancelled) break
-        try {
-          await act('connect', { addr })
-          break
-        } catch {
-          // that saved peer didn't answer - try the next one
-        }
+      try {
+        const current = await adapter.status().catch(() => null)
+        if (cancelled || !current?.online) return
+        const connected = new Set(current.peers ?? [])
+        await Promise.allSettled(bootstrap.map(async (addr) => {
+          const peer = addr.split('/p2p/').at(-1)
+          if (cancelled || connected.has(peer)) return
+          await adapter.act('connect', { addr })
+        }))
+        if (!cancelled) refreshStatus()
+      } finally {
+        inFlight = false
       }
-      inFlight = false
+    }
+    const recover = async () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      await adapter.act('checkPeers').catch(() => {})
+      if (cancelled) return
+      await tryReconnect()
+      if (!cancelled) await act('sync').catch(() => {})
     }
     tryReconnect()
-    const t = setInterval(tryReconnect, 15000)
-
-    // Coming back from the background (or reopening the app), the old
-    // connections are usually dead but still listed, so the check above
-    // would think we're fine. Drop the dead ones, redial, then catch up.
-    const onResume = async () => {
-      if (document.visibilityState !== 'visible' || cancelled) return
-      await adapter.act('checkPeers').catch(() => {})
-      await tryReconnect()
-      await act('sync').catch(() => {})
-    }
-    document.addEventListener('visibilitychange', onResume)
+    const t = setInterval(tryReconnect, 5000)
+    const connection = navigator.connection
+    document.addEventListener('visibilitychange', recover)
+    window.addEventListener('online', recover)
+    connection?.addEventListener('change', recover)
     return () => {
       cancelled = true
       clearInterval(t)
-      document.removeEventListener('visibilitychange', onResume)
+      document.removeEventListener('visibilitychange', recover)
+      window.removeEventListener('online', recover)
+      connection?.removeEventListener('change', recover)
     }
-  }, [adapter, bootstrap, act])
+  }, [adapter, bootstrap, act, refreshStatus])
 
   const nav = useCallback((q) => {
     setStack((s) => [...s, q])

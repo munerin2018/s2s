@@ -45,9 +45,9 @@ export function handleBlobs (libp2p, s2s, opts = {}) {
  * Ask one peer for one blob.
  * @returns {Promise<Uint8Array|null>}
  */
-export async function fetchBlobFrom (libp2p, peerId, id) {
+export async function fetchBlobFrom (libp2p, peerId, id, { timeoutMs = TIMEOUTS.blob } = {}) {
   if (!isBlobId(id)) throw new Error(`not a blob id: ${id}`)
-  const signal = AbortSignal.timeout(TIMEOUTS.blob)
+  const signal = AbortSignal.timeout(timeoutMs)
   const stream = await libp2p.dialProtocol(peerId, BLOB_PROTOCOL, { signal })
   const ch = jsonStream(stream, { maxDataLength: MAX_BLOB_BYTES })
 
@@ -68,82 +68,102 @@ export async function fetchBlobFrom (libp2p, peerId, id) {
 
 /**
  * Background fetcher: whenever an event references media we do not hold,
- * try each connected peer in turn until someone has it.
+ * ask every connected peer for it until someone has it.
+ *
+ * Peers are asked in parallel with a short timeout, and a miss is retried on
+ * a quick backoff rather than given up: in a chain like phone -> PC -> phone
+ * the middle peer usually doesn't have the image yet at the moment we first
+ * ask, and will a second or two later.
  */
 export class BlobFetcher {
   constructor (libp2p, s2s, opts = {}) {
     this.libp2p = libp2p
     this.s2s = s2s
     this.log = opts.log ?? (() => {})
-    this.wanted = new Set()
+    this.wanted = new Map() // id -> { attempts, next }
     this.inFlight = new Set()
-    this.failed = new Map() // id -> attempts
-    this.maxAttempts = opts.maxAttempts ?? 6
+    this.timeoutMs = opts.timeoutMs ?? 45_000
+    this.minDelay = opts.minDelay ?? 1_500
+    this.maxDelay = opts.maxDelay ?? 30_000
     // A post can name media that exists nowhere. Without a ceiling, one peer
     // can grow this set for free and have us dial every peer for every entry.
     this.maxWanted = opts.maxWanted ?? 2_000
+    this.timer = null
+    this.stopped = false
+    this.maxConcurrent = opts.maxConcurrent ?? 4
   }
 
   /** Scan an event for media we do not have yet. */
   async consider (event) {
     const refs = []
     const c = event?.content ?? {}
-    if (Array.isArray(c.media)) refs.push(...c.media.map((m) => m.blob))
+    if (Array.isArray(c.media)) refs.push(...c.media.map((m) => m?.blob))
     if (c.avatar) refs.push(c.avatar)
 
     for (const id of refs) {
       if (!isBlobId(id) || this.wanted.has(id)) continue
       if (this.wanted.size >= this.maxWanted) break
-      if ((this.failed.get(id) ?? 0) >= this.maxAttempts) continue
       if (await this.s2s.store.getBlob(id)) continue
-      this.wanted.add(id)
+      this.wanted.set(id, { attempts: 0, next: 0 })
     }
     this.drain()
   }
 
-  /**
-   * Someone new is here, and they may hold what nobody else did. Give every
-   * missing blob a fresh set of attempts instead of leaving earlier give-ups
-   * permanent - otherwise media posted while we were away never shows up.
-   */
+  /** Someone new is here and may hold what nobody else did: retry everything now. */
   async rescan (events) {
-    this.failed.clear()
+    for (const w of this.wanted.values()) { w.attempts = 0; w.next = 0 }
     for (const e of events) await this.consider(e)
     this.drain()
   }
 
   drain () {
-    if (this.wanted.size === 0) return
+    clearTimeout(this.timer)
+    this.timer = null
+    if (this.stopped || this.wanted.size === 0) return
     const peers = this.libp2p.getPeers()
+    // Nobody to ask; a new connection calls rescan(), which lands back here.
     if (peers.length === 0) return
 
-    for (const id of [...this.wanted]) {
+    const now = Date.now()
+    let soonest = Infinity
+    for (const [id, w] of this.wanted) {
       if (this.inFlight.has(id)) continue
+      if (w.next > now) { soonest = Math.min(soonest, w.next); continue }
+      if (this.inFlight.size >= this.maxConcurrent) break
       this.inFlight.add(id)
-      this.#tryFetch(id, peers).finally(() => this.inFlight.delete(id))
+      this.#tryFetch(id, w, peers).finally(() => {
+        this.inFlight.delete(id)
+        this.#schedule()
+      })
+    }
+    if (soonest !== Infinity) this.#schedule(soonest - now)
+  }
+
+  #schedule (delay) {
+    if (this.stopped || this.wanted.size === 0 || this.timer) return
+    if (delay === undefined) {
+      const now = Date.now()
+      let next = Infinity
+      for (const [id, w] of this.wanted) if (!this.inFlight.has(id)) next = Math.min(next, w.next)
+      if (next === Infinity) return
+      delay = next - now
+    }
+    this.timer = setTimeout(() => { this.timer = null; this.drain() }, Math.max(200, delay))
+  }
+
+  async #tryFetch (id, w, peers) {
+    const attempt = (peer) => fetchBlobFrom(this.libp2p, peer, id, { timeoutMs: this.timeoutMs })
+      .then((bytes) => bytes ?? Promise.reject(new Error('not held')))
+    try {
+      const bytes = await Promise.any(peers.map(attempt))
+      await this.s2s.store.putBlob(id, bytes)
+      this.wanted.delete(id)
+      this.log(`fetched media ${id.slice(0, 10)} (${bytes.length} bytes)`)
+    } catch {
+      w.attempts++
+      w.next = Date.now() + Math.min(this.maxDelay, this.minDelay * 2 ** (w.attempts - 1))
     }
   }
 
-  async #tryFetch (id, peers) {
-    for (const peer of peers) {
-      try {
-        const bytes = await fetchBlobFrom(this.libp2p, peer, id)
-        if (bytes) {
-          await this.s2s.store.putBlob(id, bytes)
-          this.wanted.delete(id)
-          this.failed.delete(id)
-          this.log(`fetched media ${id.slice(0, 10)} (${bytes.length} bytes)`)
-          return
-        }
-      } catch {
-        // try the next peer
-      }
-    }
-    const attempts = (this.failed.get(id) ?? 0) + 1
-    this.failed.set(id, attempts)
-    if (attempts >= this.maxAttempts) {
-      this.wanted.delete(id)
-      this.log(`giving up on media ${id.slice(0, 10)} - no connected peer holds it`)
-    }
-  }
+  stop () { this.stopped = true; clearTimeout(this.timer); this.timer = null }
 }

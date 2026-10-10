@@ -69,6 +69,15 @@ export class S2SNetwork extends EventTarget {
         minConnections: 0,
         maxConnections: 64
       },
+      // libp2p pings every connection itself and drops the ones that stop
+      // answering - which is what turns a phone that went to sleep into a
+      // real disconnect the reconnect logic can act on. Don't add a second
+      // pinger on top: the ping protocol allows one stream at a time, and
+      // the two colliding made the monitor drop healthy connections.
+      connectionMonitor: {
+        pingInterval: 10_000,
+        abortConnectionOnPingFailure: true
+      },
       services: {
         identify: identify(),
         ping: ping(),
@@ -109,8 +118,8 @@ export class S2SNetwork extends EventTarget {
 
   async stop () {
     clearInterval(this.resyncTimer)
-    clearInterval(this.keepaliveTimer)
     clearTimeout(this.forwardTimer)
+    this.blobFetcher?.stop()
     await this.libp2p?.stop()
   }
 
@@ -218,43 +227,6 @@ export class S2SNetwork extends EventTarget {
     // Periodic reconciliation catches anything gossip missed.
     this.resyncTimer = setInterval(() => this.syncAll(), 30_000)
 
-    // WebRTC-direct connections can go quiet - a NAT binding expiring, a
-    // phone's radio idling down - without libp2p ever hearing about it: the
-    // stream muxer only notices once someone tries to actually send
-    // something over it. Pinging periodically keeps the underlying
-    // transport exercised and turns a silently-dead connection into a real
-    // peer:disconnect quickly, so the reconnect watchdog on the UI side has
-    // something to redial instead of the app just sitting at zero.
-    let pinging = false
-    this.keepaliveTimer = setInterval(async () => {
-      // The ping protocol allows at most one outbound stream per peer at a
-      // time (it's in the spec, not just this implementation) - if a run of
-      // this loop is still waiting on a slow peer when the timer fires again,
-      // starting a second round trips that limit on whatever peer both runs
-      // land on, and "too many outbound streams" was being read as a dead
-      // connection and hanging up a perfectly healthy one.
-      if (pinging) return
-      pinging = true
-      try {
-        for (const peer of this.libp2p.getPeers()) {
-          try {
-            await this.libp2p.services.ping.ping(peer, { signal: AbortSignal.timeout(10_000) })
-          } catch (err) {
-            // Our own overlapping call, not the peer being unreachable - the
-            // stream will free itself; hanging up here would drop a live
-            // connection over nothing.
-            if (/too many.*outbound/i.test(err?.message ?? '')) continue
-            // Close only the connection that was pinged, not every
-            // connection to this peer - a newer, healthy one may exist.
-            this.log(`ping to ${short(peer.toString())} failed (${err.message}), closing that connection`)
-            const [conn] = this.libp2p.getConnections(peer)
-            await conn?.close().catch(() => conn.abort?.(err))
-          }
-        }
-      } finally {
-        pinging = false
-      }
-    }, 20_000)
   }
 
   /**
@@ -277,7 +249,10 @@ export class S2SNetwork extends EventTarget {
 
   async syncPeer (peerId) {
     const key = peerId.toString()
-    if (this.syncing.has(key)) return
+    if (this.syncing.has(key)) {
+      this.syncing.get(key).again = true
+      return
+    }
     const token = {}
     this.syncing.set(key, token)
     try {
@@ -289,7 +264,12 @@ export class S2SNetwork extends EventTarget {
     } catch (err) {
       this.log(`sync with ${short(key)} failed: ${err.message}`)
     } finally {
-      if (this.syncing.get(key) === token) this.syncing.delete(key)
+      if (this.syncing.get(key) === token) {
+        this.syncing.delete(key)
+        if (token.again && this.libp2p.getPeers().some((p) => p.toString() === key)) {
+          this.syncPeer(peerId).catch(() => {})
+        }
+      }
     }
   }
 
@@ -331,6 +311,7 @@ export class S2SNetwork extends EventTarget {
   #wireLocalEvents () {
     this.s2s.addEventListener('local', (evt) => {
       this.publish(evt.detail).catch((err) => this.log(`publish failed: ${err.message}`))
+      this.#scheduleGossipForward()
     })
   }
 

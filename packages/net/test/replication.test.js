@@ -156,3 +156,34 @@ test('three peers converge, including through the middle one', async (t) => {
     ['from a', 'from c']
   )
 })
+
+
+test('local posts sync promptly even when gossip does not deliver', async (t) => {
+  const a = await peer('no-gossip-a')
+  const b = await peer('no-gossip-b')
+  t.after(async () => { await a.net.stop(); await b.net.stop() })
+  const addr = a.net.libp2p.getMultiaddrs().find((m) => m.toString().includes('/tcp/') && !m.toString().includes('/ws'))
+  await b.net.connect(addr.toString())
+  await wait(1200)
+  a.net.libp2p.services.pubsub.publish = async () => ({ recipients: [] })
+  await a.s2s.post({ text: 'sync without gossip' })
+  await until(() => b.s2s.views.global().some((p) => p.text === 'sync without gossip'), 8000, 'immediate reconciliation')
+})
+
+test('missing media is retried when its connected holder receives it later', async (t) => {
+  const a = await peer('late-media-a')
+  const b = await peer('late-media-b')
+  t.after(async () => { await a.net.stop(); await b.net.stop() })
+  const bytes = new Uint8Array([1, 7, 9, 4])
+  const ref = await a.s2s.addMedia(bytes, { mime: 'image/png' })
+  a.s2s.store.blobs.delete(ref.blob)
+  a.s2s.store.backend.blobs.delete(ref.blob)
+  await a.s2s.post({ text: 'late media', media: [ref] })
+  const addr = a.net.libp2p.getMultiaddrs().find((m) => m.toString().includes('/tcp/') && !m.toString().includes('/ws'))
+  await b.net.connect(addr.toString())
+  await until(() => b.s2s.views.global().length === 1, 8000, 'post before media')
+  assert.equal(await b.s2s.getMedia(ref.blob), null)
+  await a.s2s.store.putBlob(ref.blob, bytes)
+  const got = await until(() => b.s2s.getMedia(ref.blob), 8000, 'retry without reconnect')
+  assert.deepEqual(got, bytes)
+})

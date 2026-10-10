@@ -47,6 +47,7 @@ export function useBlobUrl (adapter, blob) {
 
   useEffect(() => {
     if (!blob) { setUrl(null); return }
+    setUrl(null)
     let alive = true
     let resolved = false
     const load = () =>
@@ -84,9 +85,9 @@ function MediaItem ({ m, adapter, onOpen }) {
   if (!url) {
     return (
       <div className="media-pending">
-        まだ受信していません
+        受信中…
         <br />
-        <span style={{ opacity: .6 }}>保持しているピアに接続すると表示されます</span>
+        <span style={{ opacity: .6 }}>保持しているピアから取得しています</span>
       </div>
     )
   }
