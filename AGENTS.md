@@ -21,5 +21,6 @@
 
 - Android デバッグ版をビルドしたら、生成された
   `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk` を
-  `G:\マイドライブ\Claude_Code\app-debug.apk` にコピーし、既存ファイルを更新すること。
+  S2S のデバッグ版と分かるよう、配布用ファイル名の先頭に `s2s-` を付けて
+  `G:\マイドライブ\Claude_Code\s2s-app-debug.apk` にコピーし、既存ファイルを更新すること。
   この APK の配布用コピーは、上記のソース同期でビルド成果物を除外するルールの例外とする。
