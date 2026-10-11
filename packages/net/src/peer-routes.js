@@ -41,6 +41,23 @@ export function groupPeerRoutes (addresses) {
   return [...groups].map(([peerId, routes]) => ({ peerId, routes }))
 }
 
+/** Reserve slots for each saved peer instead of one relay's many addresses. */
+export function mergePeerRoutes (fresh, saved, limit = 20) {
+  const groups = groupPeerRoutes([...fresh, ...saved])
+  const result = []
+  for (let index = 0; result.length < limit; index++) {
+    let added = false
+    for (const { routes } of groups) {
+      if (routes[index] && result.length < limit) {
+        result.push(routes[index])
+        added = true
+      }
+    }
+    if (!added) break
+  }
+  return result
+}
+
 /** Re-reserve the same public relay after reopening, keeping paired routes usable. */
 export function relayRoutesForRestart (addresses) {
   return [...new Set(publicPeerRoutes(addresses, addresses).flatMap((a) => {

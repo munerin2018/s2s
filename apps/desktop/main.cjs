@@ -242,7 +242,8 @@ function wireIpc () {
       online: true,
       peerId: peer.libp2p.peerId.toString(),
       addresses: peer.libp2p.getMultiaddrs().map((m) => m.toString()),
-      peers: peer.libp2p.getPeers().map((p) => p.toString()),
+      peers: peer.onlinePeers().map((p) => p.toString()),
+      onlineUsers: peer.onlineUsers(),
       stats: peer.stats,
       logs: logs.slice(-120)
     }

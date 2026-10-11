@@ -81,6 +81,7 @@ export function handleSync (libp2p, s2s, opts = {}) {
 
         const received = await readEvents(ch, s2s, log, peer, signal)
         const sent = await writeEvents(ch, s2s, theirHave.vector, signal)
+        opts.onSync?.(peer, { received, sent })
 
         if (received || sent) log(`served ${short(peer)}: received ${received}, sent ${sent}`)
       } catch (err) {
@@ -89,7 +90,7 @@ export function handleSync (libp2p, s2s, opts = {}) {
         await stream.close().catch(() => {})
       }
     })()
-  }).catch((err) => log(`could not register sync handler: ${err.message}`))
+  }, { runOnLimitedConnection: true }).catch((err) => log(`could not register sync handler: ${err.message}`))
 }
 
 /**
@@ -101,7 +102,7 @@ export async function syncWith (libp2p, s2s, peerId, opts = {}) {
   const peer = peerId.toString()
   const signal = AbortSignal.timeout(TIMEOUTS.sync)
 
-  const stream = await libp2p.dialProtocol(peerId, SYNC_PROTOCOL, { signal })
+  const stream = await libp2p.dialProtocol(peerId, SYNC_PROTOCOL, { signal, runOnLimitedConnection: true })
   const ch = jsonStream(stream)
 
   try {

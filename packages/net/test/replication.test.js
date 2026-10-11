@@ -35,6 +35,20 @@ async function peer (name, opts = {}) {
   return { s2s, net, name }
 }
 
+test('online list identifies the connected account, not authors copied in its logs', async () => {
+  const a = await peer('online-a')
+  const b = await peer('online-b')
+  try {
+    const other = new S2S({ identity: createIdentity() })
+    await b.s2s.store.put(await other.post({ text: 'replicated author is not an online session' }))
+    await a.net.connect(b.net.libp2p.getMultiaddrs().find((m) => m.toString().includes('/tcp/') && !m.toString().includes('/ws')).toString())
+    await until(() => a.net.onlineUsers().some((u) => u.id === b.s2s.me) && b.net.onlineUsers().some((u) => u.id === a.s2s.me))
+    assert.equal(a.net.onlineUsers().some((u) => u.id === other.me), false)
+    await a.net.libp2p.hangUp(b.net.libp2p.peerId)
+    await until(() => a.net.onlineUsers().length === 0)
+  } finally { await Promise.all([a.net.stop(), b.net.stop()]) }
+})
+
 test('diff computes exactly the ranges the other side is missing', () => {
   const a = createIdentity().id
   assert.deepEqual(diff({ [a]: 5 }, { [a]: 2 }), [{ author: a, from: 3, to: 5 }])

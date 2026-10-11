@@ -23,6 +23,9 @@ import { FaultTolerance } from '@libp2p/interface'
 import { EVENT_TOPIC, boardTopic, SYNC_PROTOCOL } from './protocol.js'
 import { handleSync, syncWith } from './sync.js'
 import { handleBlobs, BlobFetcher } from './blobs.js'
+import { handlePresence, requestPresence } from './presence.js'
+import { lookupPeerRoutes, completePeerRoutes } from './public-dht.js'
+import { peerIdFromString } from '@libp2p/peer-id'
 
 export class S2SNetwork extends EventTarget {
   /**
@@ -46,6 +49,10 @@ export class S2SNetwork extends EventTarget {
     this.blobFetcher = null
     this.syncing = new Map()
     this.participants = new Set()
+    this.peerHealth = new Map()
+    this.peerAccounts = new Map()
+    this.presenceRequests = new Map()
+    this.routeLookups = new Map()
     this.stats = { received: 0, published: 0, rejected: 0, syncs: 0, lastSync: null }
   }
 
@@ -70,7 +77,9 @@ export class S2SNetwork extends EventTarget {
       peerDiscovery,
       connectionManager: {
         minConnections: 0,
-        maxConnections: 64
+        // Public relay discovery can otherwise keep dozens of WebRTC/WS
+        // connections alive and exhaust an Android WebView's memory.
+        maxConnections: this.opts.publicRouting ? 12 : 64
       },
       // libp2p pings every connection itself and drops the ones that stop
       // answering - which is what turns a phone that went to sleep into a
@@ -90,13 +99,15 @@ export class S2SNetwork extends EventTarget {
           // very first post of the very first peer throws instead of queueing.
           allowPublishToZeroTopicPeers: true,
           ignoreDuplicatePublishError: true,
+          runOnLimitedConnection: true,
           emitSelf: false
         }),
         ...services
       }
     })
 
-    handleSync(this.libp2p, this.s2s, { log: this.log })
+    handleSync(this.libp2p, this.s2s, { log: this.log, onSync: (peer) => this.#markSynced(peer) })
+    await handlePresence(this.libp2p, this.s2s.identity)
     handleBlobs(this.libp2p, this.s2s, { log: this.log })
     this.blobFetcher = new BlobFetcher(this.libp2p, this.s2s, { log: this.log })
 
@@ -110,6 +121,9 @@ export class S2SNetwork extends EventTarget {
     this.#wirePubsub()
     this.#wirePeers()
     this.#wireLocalEvents()
+    this.presenceTimer = setInterval(() => {
+      for (const peer of this.participantPeers()) this.#refreshPresence(peer)
+    }, 10_000)
 
     this.log(`peer id ${this.libp2p.peerId.toString()}`)
     for (const addr of this.libp2p.getMultiaddrs()) this.log(`listening on ${addr.toString()}`)
@@ -123,6 +137,7 @@ export class S2SNetwork extends EventTarget {
   async stop () {
     clearInterval(this.resyncTimer)
     clearTimeout(this.forwardTimer)
+    clearInterval(this.presenceTimer)
     this.blobFetcher?.stop()
     await this.libp2p?.stop()
   }
@@ -233,12 +248,16 @@ export class S2SNetwork extends EventTarget {
       this.log(`disconnected from ${short(evt.detail.toString())}`)
       this.syncing.delete(evt.detail.toString())
       this.participants.delete(evt.detail.toString())
+      this.peerHealth.delete(evt.detail.toString())
+      this.peerAccounts.delete(evt.detail.toString())
       this.dispatchEvent(new Event('peers'))
     })
 
     this.libp2p.addEventListener('peer:identify', (evt) => {
       if (!evt.detail.protocols.includes(SYNC_PROTOCOL)) return
       this.participants.add(evt.detail.peerId.toString())
+      this.libp2p.peerStore.merge(evt.detail.peerId, { tags: { 's2s-participant': { value: 100 } } }).catch(() => {})
+      this.#refreshPresence(evt.detail.peerId)
       this.dispatchEvent(new Event('peers'))
       this.syncPeer(evt.detail.peerId).catch(() => {})
     })
@@ -279,6 +298,7 @@ export class S2SNetwork extends EventTarget {
       const res = await syncWith(this.libp2p, this.s2s, peerId, { log: this.log })
       this.stats.syncs++
       this.stats.lastSync = Date.now()
+      this.#markSynced(key)
       if (res.received) {
         this.blobFetcher.drain()
         this.dispatchEvent(new Event('sync'))
@@ -357,7 +377,12 @@ export class S2SNetwork extends EventTarget {
   // ---- introspection ----------------------------------------------------
 
   async connect (addr) {
-    const addresses = (Array.isArray(addr) ? addr : [addr]).map((a) => multiaddr(a))
+    let addresses = (Array.isArray(addr) ? addr : [addr]).map((a) => multiaddr(a))
+    const target = addresses[0]?.getPeerId()
+    if (this.opts.publicRouting && target && addresses.some((a) => a.toString().includes('/p2p-circuit'))) {
+      const routes = await this.resolvePeer(target).catch(() => [])
+      if (routes.length) addresses = [...new Set([...routes, ...addresses.map(String)])].map((a) => multiaddr(a))
+    }
     const label = addresses.map((a) => a.toString()).join(', ')
     try {
       const connection = await this.libp2p.dial(addresses, { signal: AbortSignal.timeout(20_000) })
@@ -369,11 +394,69 @@ export class S2SNetwork extends EventTarget {
     }
   }
 
+  async resolvePeer (target) {
+    if (!this.libp2p.services.dht) return []
+    const cached = this.routeLookups.get(target)
+    if (cached && Date.now() - cached.ts < 15_000) return cached.promise
+    const signal = AbortSignal.timeout(6_000)
+    const abort = new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('peer lookup timed out')), { once: true }))
+    const promise = Promise.race([lookupPeerRoutes(this.libp2p, target, signal), abort]).then(async (routes) => {
+      if (routes.length) {
+        await this.libp2p.peerStore.merge(peerIdFromString(target), { multiaddrs: routes.map((a) => multiaddr(a)) })
+        this.log(`resolved current routes for ${short(target)}`)
+      }
+      return routes
+    }).catch((err) => { this.log(`route lookup for ${short(target)}: ${err.message}`); return [] })
+    this.routeLookups.set(target, { ts: Date.now(), promise })
+    return promise
+  }
+
+  #markSynced (peer) {
+    this.participants.add(peer.toString())
+    this.peerHealth.set(peer.toString(), Date.now())
+    this.#refreshPresence(peerIdFromString(peer.toString()))
+    this.dispatchEvent(new Event('peers'))
+  }
+
+  #refreshPresence (peer) {
+    const key = peer.toString()
+    if (this.presenceRequests.has(key)) return
+    const request = requestPresence(this.libp2p, peer).then(async (proof) => {
+      if (!this.libp2p.getConnections(peer).length) return
+      const routes = completePeerRoutes(proof.addresses, key)
+      this.peerAccounts.set(key, { author: proof.author, routes })
+      if (routes.length) await this.libp2p.peerStore.merge(peer, { multiaddrs: routes.map((a) => multiaddr(a)) })
+      this.dispatchEvent(new Event('peers'))
+    }).catch(() => {}).finally(() => this.presenceRequests.delete(key))
+    this.presenceRequests.set(key, request)
+  }
+
+  onlinePeers () {
+    return this.participantPeers().filter((p) => Date.now() - (this.peerHealth.get(p.toString()) ?? 0) < 45_000)
+  }
+
+  onlineUsers () {
+    const users = new Map()
+    for (const peer of this.onlinePeers()) {
+      const peerId = peer.toString()
+      const author = this.peerAccounts.get(peerId)?.author
+      const key = author ?? peerId
+      const user = users.get(key) ?? {
+        ...(author ? this.s2s.store.profile(author) : { id: null, name: 'ユーザー情報を確認中' }),
+        verified: !!author, isSelf: author === this.s2s.me, peerIds: [], lastSeen: this.peerHealth.get(peerId)
+      }
+      user.peerIds.push(peerId)
+      users.set(key, user)
+    }
+    return [...users.values()]
+  }
+
   peerInfo () {
     return {
       peerId: this.libp2p.peerId.toString(),
       addresses: this.libp2p.getMultiaddrs().map((m) => m.toString()),
-      peers: this.participantPeers().map((p) => p.toString()),
+      peers: this.onlinePeers().map((p) => p.toString()),
+      onlineUsers: this.onlineUsers(),
       topics: this.libp2p.services.pubsub.getTopics(),
       stats: { ...this.stats }
     }
@@ -387,10 +470,10 @@ export class S2SNetwork extends EventTarget {
   async peerAddresses () {
     const records = await Promise.allSettled(this.participantPeers().map(async (id) => {
       const peer = await this.libp2p.peerStore.get(id)
-      return peer.addresses.flatMap(({ multiaddr: addr }) => {
+      return [...(this.peerAccounts.get(id.toString())?.routes ?? []), ...peer.addresses.flatMap(({ multiaddr: addr }) => {
         if (addr.getPeerId() && addr.getPeerId() !== id.toString()) return []
         return [addr.getPeerId() ? addr.toString() : addr.encapsulate(`/p2p/${id}`).toString()]
-      })
+      })]
     }))
     return records.flatMap((r) => r.status === 'fulfilled' ? r.value : [])
   }

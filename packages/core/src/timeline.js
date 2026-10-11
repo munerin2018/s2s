@@ -200,8 +200,7 @@ export function makeViews (store, viewer, filter = { authors: new Set(), events:
     /** Who we know about, for the "find people" view. */
     people () {
       const me = store.following(viewer)
-      return store
-        .knownAuthors()
+      return [...new Set([viewer, ...store.knownAuthors()])]
         .filter((a) => a === viewer || !hidden(a))
         .map((a) => ({
           ...store.profile(a),
@@ -210,7 +209,7 @@ export function makeViews (store, viewer, filter = { authors: new Set(), events:
           isSelf: a === viewer,
           followers: (store.followers.get(a) ?? new Set()).size
         }))
-        .sort((a, b) => b.posts - a.posts)
+        .sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || b.posts - a.posts)
     },
 
     /** Things addressed at the local user. */

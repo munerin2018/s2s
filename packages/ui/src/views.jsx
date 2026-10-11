@@ -247,6 +247,21 @@ export function ThreadView ({ snap, adapter, me, act, nav, onReport }) {
 
 /* ---- people & profile -------------------------------------------------- */
 
+export function OnlineUsers ({ users, adapter, nav }) {
+  if (!users.length) return <Empty icon="👥" title="現在接続中のユーザーはいません">接続と同期ができた相手がここに表示されます。</Empty>
+  return users.map((user) => (
+    <div className="post" key={user.id ?? user.peerIds[0]}>
+      {user.id && <button onClick={() => nav({ view: 'author', author: user.id })}><Avatar profile={user} adapter={adapter} /></button>}
+      <div className="grow">
+        <div className="name">{user.name}{user.isSelf && <span className="small muted"> (自分の別端末)</span>}</div>
+        <div className="small muted wrap">{shortId(user.id ?? user.peerIds[0])}</div>
+        <div className="small muted">接続中{user.peerIds.length > 1 && ` · ${user.peerIds.length}台`}</div>
+      </div>
+      {user.id && <button className="btn tiny" onClick={() => nav({ view: 'author', author: user.id })}>プロフィール</button>}
+    </div>
+  ))
+}
+
 export function People ({ snap, adapter, act, nav }) {
   const people = snap.people ?? []
   return people.length === 0 ? (

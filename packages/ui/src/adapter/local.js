@@ -107,19 +107,19 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
         }
         const announced = await net.peerAddresses().catch(() => [])
         const routes = publicPeerRoutes(announced, announced)
-        let changed = false
-        for (const addr of routes) {
-          if (learnedRoutes.has(addr) || learnedRoutes.size >= 200) continue
-          learnedRoutes.add(addr)
-          changed = true
+        const next = [...new Set([...routes, ...learnedRoutes])].slice(0, 200)
+        if (JSON.stringify(next) !== JSON.stringify([...learnedRoutes])) {
+          learnedRoutes.clear()
+          for (const addr of next) learnedRoutes.add(addr)
+          await backend.setMeta('peerRoutes', next)
         }
-        if (changed) await backend.setMeta('peerRoutes', [...learnedRoutes])
       }
       return {
         online: netReady,
         peerId: netReady ? net.libp2p.peerId.toString() : null,
         addresses: netReady ? net.libp2p.getMultiaddrs().map((m) => m.toString()) : [],
-        peers: netReady ? net.participantPeers().map((p) => p.toString()) : [],
+        peers: netReady ? net.onlinePeers().map((p) => p.toString()) : [],
+        onlineUsers: netReady ? net.onlineUsers() : [],
         transportPeers: netReady ? net.libp2p.getPeers().map((p) => p.toString()) : [],
         peerAddresses: [...learnedRoutes],
         stats: net.stats,

@@ -9,6 +9,17 @@ import { S2S } from '../src/s2s.js'
 
 const mk = () => new S2S({ identity: createIdentity() })
 
+test('people always includes the local account first, even with no local events', async () => {
+  const local = mk()
+  assert.equal(local.views.people()[0].id, local.me)
+  const remote = mk()
+  for (let i = 0; i < 3; i++) await local.store.put(await remote.post({ text: `remote ${i}` }))
+  const people = local.views.people()
+  assert.equal(people[0].id, local.me)
+  assert.equal(people[0].isSelf, true)
+  assert.equal(people[1].id, remote.me)
+})
+
 test('canonical encoding is order independent', () => {
   assert.equal(canonical({ b: 1, a: 2 }), canonical({ a: 2, b: 1 }))
   assert.equal(canonical({ a: [3, 1] }), '{"a":[3,1]}')

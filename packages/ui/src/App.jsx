@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAdapter, savedBootstrapPeers, saveBootstrapPeers } from './adapter/index.js'
-import { groupPeerRoutes, publicPeerRoutes } from '../../net/src/peer-routes.js'
+import { groupPeerRoutes, publicPeerRoutes, mergePeerRoutes } from '../../net/src/peer-routes.js'
 import { Composer, Empty, Sheet } from './parts.jsx'
 import { ReportSheet, TermsGate, termsAccepted } from './safety.jsx'
 import { applyFilter, isFollowingList, refreshList } from './moderation.js'
 import {
-  BoardThreads, Boards, Feed, Gallery, Notifications, People, ProfileView, Settings, ThreadView
+  BoardThreads, Boards, Feed, Gallery, Notifications, People, ProfileView, Settings, ThreadView, OnlineUsers
 } from './views.jsx'
 
 const TABS = [
@@ -36,6 +36,7 @@ export default function App () {
   const [status, setStatus] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
   const [reporting, setReporting] = useState(null)
+  const [showOnline, setShowOnline] = useState(false)
   const [accepted, setAccepted] = useState(termsAccepted)
   const [bootstrap, setBootstrapState] = useState(savedBootstrapPeers)
   const scrollRef = useRef(null)
@@ -125,7 +126,7 @@ export default function App () {
     if (!status?.peerAddresses?.length) return
     setBootstrapState((saved) => {
       const routes = publicPeerRoutes(status.peerAddresses, saved)
-      const next = [...new Set([...routes, ...saved])].slice(0, 20)
+      const next = mergePeerRoutes(routes, saved)
       if (JSON.stringify(next) === JSON.stringify(saved)) return saved
       saveBootstrapPeers(next)
       return next
@@ -242,14 +243,18 @@ export default function App () {
   const title = top
     ? (top.view === 'board' ? `/${top.board}/` : top.view === 'author' ? 'プロフィール' : 'スレッド')
     : TITLES[tab]
+  const onlineCount = status?.onlineUsers?.length ?? status?.peers?.length ?? 0
 
   return (
     <div className="app">
       <header className="topbar">
         {stack.length > 0 && <button className="btn tiny ghost" onClick={back}>← 戻る</button>}
         <h1>{title}</h1>
-        <span className={`dot${status?.peers?.length ? ' on' : ''}`} title={`接続中のピア: ${status?.peers?.length ?? 0}`} />
-        <span className="small muted">{status?.peers?.length ?? 0}</span>
+        <button className="online-status" aria-label={`オンラインのユーザー ${onlineCount}人。ユーザー一覧を開く`}
+          onClick={() => { refreshStatus(); setShowOnline(true) }}>
+          <span className={`dot${onlineCount ? ' on' : ''}`} />
+          <span className="small muted">{onlineCount}</span>
+        </button>
       </header>
 
       <main className="scroll" ref={scrollRef}>
@@ -288,6 +293,13 @@ export default function App () {
           onClose={() => setReporting(null)}
           onDone={() => refresh()}
         />
+      )}
+
+      {showOnline && (
+        <Sheet title={`オンラインのユーザー (${onlineCount})`} onClose={() => setShowOnline(false)}>
+          <OnlineUsers users={status?.onlineUsers ?? []} adapter={adapter}
+            nav={(target) => { setShowOnline(false); nav(target) }} />
+        </Sheet>
       )}
 
       {replyTo && (

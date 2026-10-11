@@ -38,7 +38,7 @@ export function handleBlobs (libp2p, s2s, opts = {}) {
         await stream.close().catch(() => {})
       }
     })()
-  }).catch((err) => log(`could not register blob handler: ${err.message}`))
+  }, { runOnLimitedConnection: true }).catch((err) => log(`could not register blob handler: ${err.message}`))
 }
 
 /**
@@ -48,7 +48,7 @@ export function handleBlobs (libp2p, s2s, opts = {}) {
 export async function fetchBlobFrom (libp2p, peerId, id, { timeoutMs = TIMEOUTS.blob } = {}) {
   if (!isBlobId(id)) throw new Error(`not a blob id: ${id}`)
   const signal = AbortSignal.timeout(timeoutMs)
-  const stream = await libp2p.dialProtocol(peerId, BLOB_PROTOCOL, { signal })
+  const stream = await libp2p.dialProtocol(peerId, BLOB_PROTOCOL, { signal, runOnLimitedConnection: true })
   const ch = jsonStream(stream, { maxDataLength: MAX_BLOB_BYTES })
 
   try {

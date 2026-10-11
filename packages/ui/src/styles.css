@@ -84,6 +84,8 @@ a { color: var(--accent); }
   flex: none;
 }
 .dot.on { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.online-status { display: flex; align-items: center; gap: 8px; min-width: 44px; min-height: 44px; justify-content: center; border-radius: 10px; }
+.online-status:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
 
 .scroll {
   overflow-y: auto;
