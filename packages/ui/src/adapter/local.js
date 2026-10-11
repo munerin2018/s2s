@@ -9,6 +9,7 @@ import { IdbBackend, loadOrCreateSecretIdb } from '../../../core/src/store-idb.j
 import { createBrowserPeer } from '../../../net/src/platform-browser.js'
 import { loadBrowserNetworkKey } from '../../../net/src/browser-key.js'
 import { nativeDialAddresses } from '../../../net/src/native-addresses.js'
+import { publicPeerRoutes } from '../../../net/src/peer-routes.js'
 import { Capacitor } from '@capacitor/core'
 
 const LOG_LIMIT = 300
@@ -24,6 +25,7 @@ export function clearLocalSettings () {
 
 export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
   const backend = await new IdbBackend().init()
+  const learnedRoutes = new Set((await backend.getMeta('peerRoutes')) ?? [])
   const identity = await loadOrCreateSecretIdb(backend)
 
   const s2s = new S2S({ identity, backend })
@@ -95,11 +97,23 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
     },
 
     async status () {
+      if (netReady) {
+        const announced = await net.peerAddresses().catch(() => [])
+        const routes = publicPeerRoutes(announced, announced)
+        let changed = false
+        for (const addr of routes) {
+          if (learnedRoutes.has(addr) || learnedRoutes.size >= 200) continue
+          learnedRoutes.add(addr)
+          changed = true
+        }
+        if (changed) await backend.setMeta('peerRoutes', [...learnedRoutes])
+      }
       return {
         online: netReady,
         peerId: netReady ? net.libp2p.peerId.toString() : null,
         addresses: netReady ? net.libp2p.getMultiaddrs().map((m) => m.toString()) : [],
         peers: netReady ? net.libp2p.getPeers().map((p) => p.toString()) : [],
+        peerAddresses: [...learnedRoutes],
         stats: net.stats,
         logs: logs.slice(-120)
       }

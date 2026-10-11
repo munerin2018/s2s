@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAdapter, savedBootstrapPeers, saveBootstrapPeers } from './adapter/index.js'
+import { groupPeerRoutes, publicPeerRoutes } from '../../net/src/peer-routes.js'
 import { Composer, Empty, Sheet } from './parts.jsx'
 import { ReportSheet, TermsGate, termsAccepted } from './safety.jsx'
 import { applyFilter, isFollowingList, refreshList } from './moderation.js'
@@ -120,6 +121,17 @@ export default function App () {
     return () => { off(); clearInterval(t) }
   }, [adapter, refresh, refreshStatus])
 
+  useEffect(() => {
+    if (!status?.peerAddresses?.length) return
+    setBootstrapState((saved) => {
+      const routes = publicPeerRoutes(status.peerAddresses, saved)
+      const next = [...new Set([...routes, ...saved])].slice(0, 20)
+      if (JSON.stringify(next) === JSON.stringify(saved)) return saved
+      saveBootstrapPeers(next)
+      return next
+    })
+  }, [status?.peerAddresses])
+
   /* ---- actions ------------------------------------------------------- */
 
   const act = useCallback(async (action, payload) => {
@@ -142,10 +154,9 @@ export default function App () {
         const current = await adapter.status().catch(() => null)
         if (cancelled || !current?.online) return
         const connected = new Set(current.peers ?? [])
-        await Promise.allSettled(bootstrap.map(async (addr) => {
-          const peer = addr.split('/p2p/').at(-1)
-          if (cancelled || connected.has(peer)) return
-          await adapter.act('connect', { addr })
+        await Promise.allSettled(groupPeerRoutes(bootstrap).map(async ({ peerId, routes }) => {
+          if (cancelled || connected.has(peerId)) return
+          await adapter.act('connect', { addr: routes })
         }))
         if (!cancelled) refreshStatus()
       } finally {

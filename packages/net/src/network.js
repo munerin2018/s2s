@@ -13,7 +13,7 @@
 import { createLibp2p } from 'libp2p'
 import { noise } from '@chainsafe/libp2p-noise'
 import { yamux } from '@chainsafe/libp2p-yamux'
-import { identify } from '@libp2p/identify'
+import { identify, identifyPush } from '@libp2p/identify'
 import { ping } from '@libp2p/ping'
 import { gossipsub } from '@chainsafe/libp2p-gossipsub'
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2'
@@ -80,6 +80,7 @@ export class S2SNetwork extends EventTarget {
       },
       services: {
         identify: identify(),
+        identifyPush: identifyPush(),
         ping: ping(),
         pubsub: gossipsub({
           // A brand new network has nobody subscribed yet; without this the
@@ -182,6 +183,9 @@ export class S2SNetwork extends EventTarget {
   // ---- peers ------------------------------------------------------------
 
   #wirePeers () {
+    this.libp2p.addEventListener('peer:update', () => {
+      this.dispatchEvent(new Event('peers'))
+    })
     this.libp2p.addEventListener('self:peer:update', () => {
       this.dispatchEvent(new Event('peers'))
     })
@@ -358,6 +362,18 @@ export class S2SNetwork extends EventTarget {
       topics: this.libp2p.services.pubsub.getTopics(),
       stats: { ...this.stats }
     }
+  }
+
+  /** Addresses announced by authenticated connected peers, including NAT updates. */
+  async peerAddresses () {
+    const records = await Promise.allSettled(this.libp2p.getPeers().map(async (id) => {
+      const peer = await this.libp2p.peerStore.get(id)
+      return peer.addresses.flatMap(({ multiaddr: addr }) => {
+        if (addr.getPeerId() && addr.getPeerId() !== id.toString()) return []
+        return [addr.getPeerId() ? addr.toString() : addr.encapsulate(`/p2p/${id}`).toString()]
+      })
+    }))
+    return records.flatMap((r) => r.status === 'fulfilled' ? r.value : [])
   }
 }
 
