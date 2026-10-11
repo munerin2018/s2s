@@ -8,6 +8,8 @@ import { S2S } from '../../../core/src/s2s.js'
 import { IdbBackend, loadOrCreateSecretIdb } from '../../../core/src/store-idb.js'
 import { createBrowserPeer } from '../../../net/src/platform-browser.js'
 import { loadBrowserNetworkKey } from '../../../net/src/browser-key.js'
+import { nativeDialAddresses } from '../../../net/src/native-addresses.js'
+import { Capacitor } from '@capacitor/core'
 
 const LOG_LIMIT = 300
 
@@ -85,6 +87,9 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
       if (['connect', 'sync', 'checkPeers'].includes(action)) {
         await ensureNetwork()
         if (!netReady) throw new Error('通信の起動に失敗しました。自動再試行しています。')
+      }
+      if (action === 'connect' && Capacitor.isNativePlatform()) {
+        payload = { ...payload, addr: nativeDialAddresses(payload.addr) }
       }
       return runAction(s2s, net, action, payload)
     },

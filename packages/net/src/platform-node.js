@@ -29,6 +29,7 @@ import { webRTCDirect } from '@libp2p/webrtc'
 import { mdns } from '@libp2p/mdns'
 import { bootstrap } from '@libp2p/bootstrap'
 import { circuitRelayServer } from '@libp2p/circuit-relay-v2'
+import { uPnPNAT } from '@libp2p/upnp-nat'
 import { kadDHT } from '@libp2p/kad-dht'
 import { keychain } from '@libp2p/keychain'
 import { S2SNetwork } from './network.js'
@@ -53,6 +54,7 @@ export function createNodePeer (opts) {
     wsPort = 0,
     webrtcPort = 0,
     relay = true,
+    nat = false,
     dht = false,
     lan = true,
     bootstrapPeers = [],
@@ -66,6 +68,13 @@ export function createNodePeer (opts) {
   if (bootstrapPeers.length > 0) peerDiscovery.push(bootstrap({ list: bootstrapPeers }))
 
   const services = {}
+  if (nat) {
+    services.upnpNAT = uPnPNAT({
+      autoConfirmAddress: true,
+      portMappingDescription: 'S2S peer',
+      initialGatewaySearchTimeout: 3000
+    })
+  }
   if (relay) {
     services.relay = circuitRelayServer({
       reservations: { maxReservations: 64, applyDefaultLimit: false }

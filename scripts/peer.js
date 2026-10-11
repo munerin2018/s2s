@@ -31,6 +31,7 @@ const { values } = parseArgs({
     connect: { type: 'string', multiple: true, default: [] },
     lan: { type: 'boolean', default: true },
     'no-lan': { type: 'boolean', default: false },
+    nat: { type: 'boolean', default: false },
     relay: { type: 'boolean', default: true },
     dht: { type: 'boolean', default: false },
     quiet: { type: 'boolean', default: false },
@@ -50,6 +51,7 @@ S2S headless peer
   --webrtc <port>    UDP port for WebRTC Direct     (default 0)
   --connect <addr>   dial this multiaddr on start   (repeatable)
   --no-lan           do not announce on the local network
+  --nat              request UPnP port mappings for this peer's listen ports
   --dht              join the Kademlia DHT
   --name <name>      set the profile name on first run
   --post <text>      publish a post on start        (repeatable)
@@ -81,11 +83,21 @@ const peer = createNodePeer({
   webrtcPort: Number(values.webrtc),
   lan: values.lan && !values['no-lan'],
   relay: values.relay,
+  nat: values.nat,
   dht: values.dht,
   log
 })
 
 await peer.start()
+
+let knownAddresses = new Set(peer.libp2p.getMultiaddrs().map((a) => a.toString()))
+peer.addEventListener('peers', () => {
+  const addresses = new Set(peer.libp2p.getMultiaddrs().map((a) => a.toString()))
+  for (const addr of addresses) {
+    if (!knownAddresses.has(addr)) log(`new dial address ${addr}`)
+  }
+  knownAddresses = addresses
+})
 
 console.log('\nAddresses other peers can dial:')
 for (const a of peer.libp2p.getMultiaddrs()) console.log(`  ${a}`)

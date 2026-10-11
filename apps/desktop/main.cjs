@@ -86,6 +86,7 @@ async function createPeer () {
     wsPort: Number(process.env.S2S_WS_PORT ?? 4002),
     webrtcPort: Number(process.env.S2S_WEBRTC_PORT ?? 4003),
     relay: true,
+    nat: process.env.S2S_NAT === '1',
     lan: true,
     dht: process.env.S2S_DHT === '1',
     bootstrapPeers: (process.env.S2S_BOOTSTRAP ?? '').split(',').filter(Boolean),

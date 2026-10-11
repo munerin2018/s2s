@@ -1,5 +1,9 @@
 # Agent rules
 
+- S2S は独立した完全 P2P アプリとして維持すること。Tailscale などの外部 VPN
+  サービスを必須にしない。既存 VPN を無効化・迂回せず、通常の通信経路で接続し、
+  UDP が使えない環境では利用可能な TCP/WebSocket 経路も試すこと。
+
 - After committing a change to this repo, push it to `origin` (GitHub) before
   ending the task. This repo is public/open source, so the canonical copy is
   what's on GitHub, not the local working tree.

@@ -182,6 +182,9 @@ export class S2SNetwork extends EventTarget {
   // ---- peers ------------------------------------------------------------
 
   #wirePeers () {
+    this.libp2p.addEventListener('self:peer:update', () => {
+      this.dispatchEvent(new Event('peers'))
+    })
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const id = evt.detail.id
       // mDNS re-announces every peer on the LAN every few seconds, so this
@@ -335,12 +338,13 @@ export class S2SNetwork extends EventTarget {
   // ---- introspection ----------------------------------------------------
 
   async connect (addr) {
-    const ma = multiaddr(addr)
+    const addresses = (Array.isArray(addr) ? addr : [addr]).map((a) => multiaddr(a))
+    const label = addresses.map((a) => a.toString()).join(', ')
     try {
-      await this.libp2p.dial(ma, { signal: AbortSignal.timeout(20_000) })
-      return ma.toString()
+      const connection = await this.libp2p.dial(addresses, { signal: AbortSignal.timeout(20_000) })
+      return connection.remoteAddr.toString()
     } catch (err) {
-      this.log(`connect failed (${ma.toString()}): ${err.message}`)
+      this.log(`connect failed (${label}): ${err.message}`)
       this.dispatchEvent(new Event('peers'))
       throw err
     }

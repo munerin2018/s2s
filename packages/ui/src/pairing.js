@@ -27,6 +27,15 @@ const isLoopback = (addr) => addr.startsWith('/ip4/127.') || addr.startsWith('/i
 const isWebRTCDirect = (addr) => addr.includes('/webrtc-direct/')
 const isWebSocket = (addr) => addr.includes('/ws/') || addr.endsWith('/ws')
 
+function isPublicIPv4 (addr) {
+  const match = /^\/ip4\/(\d+)\.(\d+)\.(\d+)\.(\d+)\//.exec(addr)
+  if (!match) return false
+  const [, a, b] = match.map(Number)
+  return !(a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127))
+}
+
 /**
  * Virtual adapters that are almost never the one a phone can reach.
  * VirtualBox hands out 192.168.56.x, WSL uses 172.x, Tailscale 100.64/10.
@@ -47,6 +56,7 @@ function score (addr) {
   else return -1 // tcp: other desktop peers only, not browsers
 
   if (LAN_PATTERNS.some((re) => re.test(addr))) n += 20
+  if (isPublicIPv4(addr)) n += 80
   if (LIKELY_VIRTUAL.some((re) => re.test(addr))) n -= 15
   return n
 }
