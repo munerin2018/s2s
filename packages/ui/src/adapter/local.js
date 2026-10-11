@@ -42,6 +42,7 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
   }
 
   const privateKey = await loadBrowserNetworkKey(backend)
+  bootstrapPeers = [...new Set([...bootstrapPeers, ...learnedRoutes])]
   let net = createBrowserPeer({ s2s, bootstrapPeers, relayRoutes, privateKey, log })
 
   let netReady = false
@@ -76,6 +77,8 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
   return {
     kind: 'local',
     me: s2s.me,
+    // The existing window.s2s console belongs to this device's owner.
+    debugNetwork: () => net.libp2p,
     ready: netStarting,
 
     onChange (fn) {

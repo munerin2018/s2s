@@ -1,5 +1,15 @@
 import { multiaddr } from '@multiformats/multiaddr'
 
+/** TCP relay streams work even when a mobile VPN prevents WebRTC UDP. */
+export function preferredDialRoutes (addresses) {
+  const routes = [...new Set(addresses.flatMap((address) => {
+    const addr = String(address)
+    return addr.includes('/p2p-circuit/webrtc/') && /\/wss?\//.test(addr)
+      ? [addr.replace('/p2p-circuit/webrtc/', '/p2p-circuit/'), addr] : [addr]
+  }))]
+  return routes.sort((a, b) => Number(!/\/wss?\//.test(a) || a.includes('/webrtc/')) - Number(!/\/wss?\//.test(b) || b.includes('/webrtc/')))
+}
+
 /** Only persist browser-capable public routes belonging to a saved peer. */
 export function publicPeerRoutes (addresses, saved) {
   const peerIds = new Set(saved.flatMap((a) => {

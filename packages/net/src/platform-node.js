@@ -33,6 +33,7 @@ import { uPnPNAT } from '@libp2p/upnp-nat'
 import { kadDHT } from '@libp2p/kad-dht'
 import { keychain } from '@libp2p/keychain'
 import { S2SNetwork } from './network.js'
+import { publicDHT, PUBLIC_BOOTSTRAP } from './public-dht.js'
 
 /**
  * @param {object} opts
@@ -56,6 +57,7 @@ export function createNodePeer (opts) {
     relay = true,
     nat = false,
     dht = false,
+    publicRouting = true,
     lan = true,
     bootstrapPeers = [],
     privateKey,
@@ -65,7 +67,8 @@ export function createNodePeer (opts) {
 
   const peerDiscovery = []
   if (lan) peerDiscovery.push(mdns({ interval: 10_000 }))
-  if (bootstrapPeers.length > 0) peerDiscovery.push(bootstrap({ list: bootstrapPeers }))
+  const entryPoints = [...new Set([...bootstrapPeers, ...(publicRouting ? PUBLIC_BOOTSTRAP : [])])]
+  if (entryPoints.length > 0) peerDiscovery.push(bootstrap({ list: entryPoints, timeout: 0, tagTTL: 86_400_000 }))
 
   const services = {}
   if (nat) {
@@ -82,6 +85,8 @@ export function createNodePeer (opts) {
   }
   if (dht) {
     services.dht = kadDHT({ clientMode: false })
+  } else if (publicRouting) {
+    services.dht = publicDHT()
   }
   if (datastore) {
     // The keychain is what lets the WebRTC Direct certificate - and therefore
@@ -98,8 +103,13 @@ export function createNodePeer (opts) {
     listen: [
       `/ip4/0.0.0.0/tcp/${tcpPort}`,
       `/ip4/0.0.0.0/tcp/${wsPort}/ws`,
-      `/ip4/0.0.0.0/udp/${webrtcPort}/webrtc-direct`
+      `/ip4/0.0.0.0/udp/${webrtcPort}/webrtc-direct`,
+      ...(publicRouting ? ['/p2p-circuit'] : [])
     ],
+    publicRouting,
+    publicRelay: publicRouting,
+    discoveryPeers: entryPoints,
+    lanDiscovery: lan,
     services,
     privateKey,
     datastore,

@@ -45,5 +45,9 @@ export async function requestPresence (node, peerId) {
     const proof = await ch.read({ signal })
     if (!verifyPresence(proof, peerId.toString(), nonce)) throw new Error('invalid account presence signature')
     return proof
-  } finally { await stream.close().catch(() => {}) }
+  } finally {
+    // The signed reply is already complete. Waiting for a relay's FIN/close
+    // acknowledgement must not delay displaying the reachable account.
+    stream.close({ signal: AbortSignal.timeout(1_000) }).catch((err) => stream.abort(err))
+  }
 }

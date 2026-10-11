@@ -16,7 +16,7 @@ import { yamux } from '@chainsafe/libp2p-yamux'
 import { identify, identifyPush } from '@libp2p/identify'
 import { ping } from '@libp2p/ping'
 import { gossipsub } from '@chainsafe/libp2p-gossipsub'
-import { circuitRelayTransport } from '@libp2p/circuit-relay-v2'
+import { s2sRelayTransport } from './relay-transport.js'
 import { multiaddr } from '@multiformats/multiaddr'
 import { FaultTolerance } from '@libp2p/interface'
 
@@ -26,6 +26,7 @@ import { handleBlobs, BlobFetcher } from './blobs.js'
 import { handlePresence, requestPresence } from './presence.js'
 import { lookupPeerRoutes, completePeerRoutes } from './public-dht.js'
 import { peerIdFromString } from '@libp2p/peer-id'
+import { preferredDialRoutes, groupPeerRoutes } from './peer-routes.js'
 
 export class S2SNetwork extends EventTarget {
   /**
@@ -53,6 +54,10 @@ export class S2SNetwork extends EventTarget {
     this.peerAccounts = new Map()
     this.presenceRequests = new Map()
     this.routeLookups = new Map()
+    this.connecting = new Map()
+    this.activeRelays = new Set()
+    this.dialRelays = new Map()
+    this.pruneTimers = new Set()
     this.stats = { received: 0, published: 0, rejected: 0, syncs: 0, lastSync: null }
   }
 
@@ -60,6 +65,7 @@ export class S2SNetwork extends EventTarget {
     const { transports, peerDiscovery = [], listen = [], services = {} } = this.opts
 
     this.libp2p = await createLibp2p({
+      start: false,
       // Both of these are optional, and both matter for an address that
       // someone has written down. The peer id comes from the key, and a
       // WebRTC Direct multiaddr carries a hash of the TLS certificate; leave
@@ -70,16 +76,35 @@ export class S2SNetwork extends EventTarget {
       ...(this.opts.datastore ? { datastore: this.opts.datastore } : {}),
       addresses: { listen },
       ...(this.opts.publicRouting ? { transportManager: { faultTolerance: FaultTolerance.NO_FATAL } } : {}),
-      ...(this.opts.connectionGater ? { connectionGater: this.opts.connectionGater } : {}),
-      transports: [...transports, circuitRelayTransport()],
+      connectionGater: {
+        ...this.opts.connectionGater,
+        denyOutboundConnection: async (peer, conn) => {
+          if (await this.opts.connectionGater?.denyOutboundConnection?.(peer, conn)) return true
+          if (!this.opts.publicRouting || !this.libp2p || this.libp2p.getConnections().length < 6) return false
+          const id = peer.toString()
+          const important = this.participants.has(id) || this.connecting.has(id) || this.activeRelays.has(id) ||
+            (this.dialRelays.get(id) ?? 0) > Date.now() ||
+            this.opts.discoveryPeers?.some((a) => multiaddr(a).getPeerId() === id)
+          // Keep background discovery from consuming the slots needed for
+          // inbound S2S relay streams. The hard limit still applies to users.
+          return !important && !String(conn.remoteAddr).includes('/p2p-circuit')
+        }
+      },
+      transports: [...transports, s2sRelayTransport(this.opts.publicRelay)],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
       peerDiscovery,
       connectionManager: {
         minConnections: 0,
+        // libp2p's default sorter prefers WebRTC even if callers put WS first.
+        // Keep the mobile TCP fallback ahead of UDP-dependent upgrades.
+        ...(this.opts.publicRouting ? { addressSorter: (a, b) => {
+          const rank = (addr) => /\/wss?\//.test(String(addr)) && !String(addr).includes('/webrtc/') ? 0 : 1
+          return rank(a.multiaddr) - rank(b.multiaddr)
+        } } : {}),
         // Public relay discovery can otherwise keep dozens of WebRTC/WS
         // connections alive and exhaust an Android WebView's memory.
-        maxConnections: this.opts.publicRouting ? 12 : 64
+        maxConnections: this.opts.publicRouting ? 32 : 64
       },
       // libp2p pings every connection itself and drops the ones that stop
       // answering - which is what turns a phone that went to sleep into a
@@ -109,7 +134,7 @@ export class S2SNetwork extends EventTarget {
     handleSync(this.libp2p, this.s2s, { log: this.log, onSync: (peer) => this.#markSynced(peer) })
     await handlePresence(this.libp2p, this.s2s.identity)
     handleBlobs(this.libp2p, this.s2s, { log: this.log })
-    this.blobFetcher = new BlobFetcher(this.libp2p, this.s2s, { log: this.log })
+    this.blobFetcher = new BlobFetcher(this.libp2p, this.s2s, { log: this.log, peers: () => this.participantPeers() })
 
     // Any newly stored event may reference media we do not hold yet, no matter
     // whether it arrived by gossip, by sync, or was written locally.
@@ -118,9 +143,17 @@ export class S2SNetwork extends EventTarget {
       if (evt.detail.author !== this.s2s.me) this.#scheduleGossipForward()
     })
 
-    this.#wirePubsub()
     this.#wirePeers()
     this.#wireLocalEvents()
+    // Register handlers and identify listeners before bootstrap/listen can
+    // establish a connection; otherwise a fast restart misses identify.
+    await this.libp2p.start()
+    this.#wirePubsub()
+    // Bootstrap discovery may fire while transports are still starting.
+    // Retry entry points once the node can really dial, without delaying UI.
+    for (const { routes } of groupPeerRoutes(this.opts.discoveryPeers ?? [])) {
+      this.libp2p.dial(routes.map((a) => multiaddr(a)), { signal: AbortSignal.timeout(8_000) }).catch(() => {})
+    }
     this.presenceTimer = setInterval(() => {
       for (const peer of this.participantPeers()) this.#refreshPresence(peer)
     }, 10_000)
@@ -138,6 +171,8 @@ export class S2SNetwork extends EventTarget {
     clearInterval(this.resyncTimer)
     clearTimeout(this.forwardTimer)
     clearInterval(this.presenceTimer)
+    for (const timer of this.pruneTimers) clearTimeout(timer)
+    this.pruneTimers.clear()
     this.blobFetcher?.stop()
     await this.libp2p?.stop()
   }
@@ -205,11 +240,13 @@ export class S2SNetwork extends EventTarget {
       this.dispatchEvent(new Event('peers'))
     })
     this.libp2p.addEventListener('self:peer:update', () => {
+      this.#protectRelays().catch(() => {})
       this.dispatchEvent(new Event('peers'))
     })
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const id = evt.detail.id
-      if (this.opts.publicRouting && !this.opts.discoveryPeers?.some((a) => multiaddr(a).getPeerId() === id.toString())) return
+      const local = this.opts.lanDiscovery && evt.detail.multiaddrs?.some((a) => /^\/ip4\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(String(a)))
+      if (this.opts.publicRouting && !local && !this.opts.discoveryPeers?.some((a) => multiaddr(a).getPeerId() === id.toString())) return
       // mDNS re-announces every peer on the LAN every few seconds, so this
       // fires again and again for someone we are already talking to. Dialing
       // anyway opens a second, redundant connection to the same peer - each
@@ -254,7 +291,22 @@ export class S2SNetwork extends EventTarget {
     })
 
     this.libp2p.addEventListener('peer:identify', (evt) => {
-      if (!evt.detail.protocols.includes(SYNC_PROTOCOL)) return
+      if (!evt.detail.protocols.includes(SYNC_PROTOCOL)) {
+        if (this.opts.publicRouting) {
+          const id = evt.detail.peerId.toString()
+          const timer = setTimeout(() => {
+            this.pruneTimers.delete(timer)
+            const needed = this.participants.has(id) || this.connecting.has(id) || this.activeRelays.has(id) ||
+              (this.dialRelays.get(id) ?? 0) > Date.now() ||
+              this.opts.discoveryPeers?.some((a) => multiaddr(a).getPeerId() === id)
+            // Discovery can open several sockets concurrently before the
+            // budget check sees them. Release candidates we didn't reserve.
+            if (!needed) this.libp2p.hangUp(evt.detail.peerId).catch(() => {})
+          }, 4_000)
+          this.pruneTimers.add(timer)
+        }
+        return
+      }
       this.participants.add(evt.detail.peerId.toString())
       this.libp2p.peerStore.merge(evt.detail.peerId, { tags: { 's2s-participant': { value: 100 } } }).catch(() => {})
       this.#refreshPresence(evt.detail.peerId)
@@ -327,12 +379,15 @@ export class S2SNetwork extends EventTarget {
    */
   async checkPeers (timeoutMs = 4_000) {
     await Promise.allSettled(this.libp2p.getPeers().map(async (peer) => {
+      const checked = this.libp2p.getConnections(peer)
       try {
         await this.libp2p.services.ping.ping(peer, { signal: AbortSignal.timeout(timeoutMs) })
       } catch (err) {
         if (/too many.*outbound/i.test(err?.message ?? '')) return
         this.log(`${short(peer.toString())} did not answer after resume, hanging up`)
-        await this.libp2p.hangUp(peer).catch(() => {})
+        // A new connection may have arrived while this old ping timed out.
+        // Close only connections we actually checked, never the fresh one.
+        await Promise.allSettled(checked.map((connection) => connection.close()))
       }
     }))
     return this.libp2p.getPeers().length
@@ -377,21 +432,35 @@ export class S2SNetwork extends EventTarget {
   // ---- introspection ----------------------------------------------------
 
   async connect (addr) {
-    let addresses = (Array.isArray(addr) ? addr : [addr]).map((a) => multiaddr(a))
+    const addresses = preferredDialRoutes(Array.isArray(addr) ? addr : [addr]).map((a) => multiaddr(a))
+    this.#rememberDialRelays(addresses)
     const target = addresses[0]?.getPeerId()
-    if (this.opts.publicRouting && target && addresses.some((a) => a.toString().includes('/p2p-circuit'))) {
-      const routes = await this.resolvePeer(target).catch(() => [])
-      if (routes.length) addresses = [...new Set([...routes, ...addresses.map(String)])].map((a) => multiaddr(a))
-    }
-    const label = addresses.map((a) => a.toString()).join(', ')
-    try {
-      const connection = await this.libp2p.dial(addresses, { signal: AbortSignal.timeout(20_000) })
-      return connection.remoteAddr.toString()
-    } catch (err) {
-      this.log(`connect failed (${label}): ${err.message}`)
-      this.dispatchEvent(new Event('peers'))
-      throw err
-    }
+    const key = target ?? addresses.map(String).join(', ')
+    if (this.connecting.has(key)) return this.connecting.get(key)
+    const attempt = (async () => {
+      // Refresh in parallel: a working saved route must not wait for a DHT
+      // response. A stale route gets only a short head start before fallback.
+      const refresh = this.opts.publicRouting && target ? this.resolvePeer(target) : Promise.resolve([])
+      try {
+        let connection
+        try {
+          connection = await this.libp2p.dial(addresses, { signal: AbortSignal.timeout(this.opts.publicRouting ? 4_000 : 20_000) })
+        } catch (err) {
+          const routes = await refresh
+          if (!routes.length) throw err
+          this.#rememberDialRelays(routes)
+          connection = await this.libp2p.dial(preferredDialRoutes(routes).map((a) => multiaddr(a)), { signal: AbortSignal.timeout(8_000) })
+        }
+        this.#refreshPresence(connection.remotePeer)
+        return connection.remoteAddr.toString()
+      } catch (err) {
+        this.log(`connect failed (${key}): ${err.message}`)
+        this.dispatchEvent(new Event('peers'))
+        throw err
+      }
+    })().finally(() => this.connecting.delete(key))
+    this.connecting.set(key, attempt)
+    return attempt
   }
 
   async resolvePeer (target) {
@@ -411,6 +480,30 @@ export class S2SNetwork extends EventTarget {
     return promise
   }
 
+  async #protectRelays () {
+    const current = new Set(this.libp2p.getMultiaddrs().flatMap((addr) => {
+      const match = /\/p2p\/([^/]+)\/p2p-circuit/.exec(String(addr))
+      return match ? [match[1]] : []
+    }))
+    const previous = this.activeRelays
+    this.activeRelays = current
+    await Promise.all([...new Set([...current, ...previous])].map((id) =>
+      this.libp2p.peerStore.merge(peerIdFromString(id), { tags: {
+        // kad-dht tags ordinary routing peers above the relay transport's
+        // default value 1. Protect the relay that actually carries our app.
+        's2s-active-relay': current.has(id) ? { value: 200 } : undefined
+      } })
+    ))
+  }
+
+  #rememberDialRelays (addresses) {
+    for (const [id, expiry] of this.dialRelays) if (expiry < Date.now()) this.dialRelays.delete(id)
+    for (const addr of addresses) {
+      const match = /\/p2p\/([^/]+)\/p2p-circuit/.exec(String(addr))
+      if (match) this.dialRelays.set(match[1], Date.now() + 30_000)
+    }
+  }
+
   #markSynced (peer) {
     this.participants.add(peer.toString())
     this.peerHealth.set(peer.toString(), Date.now())
@@ -425,6 +518,10 @@ export class S2SNetwork extends EventTarget {
       if (!this.libp2p.getConnections(peer).length) return
       const routes = completePeerRoutes(proof.addresses, key)
       this.peerAccounts.set(key, { author: proof.author, routes })
+      // Signed challenge proves this account is reachable now, without
+      // waiting for a potentially large history sync to finish.
+      this.participants.add(key)
+      this.peerHealth.set(key, Date.now())
       if (routes.length) await this.libp2p.peerStore.merge(peer, { multiaddrs: routes.map((a) => multiaddr(a)) })
       this.dispatchEvent(new Event('peers'))
     }).catch(() => {}).finally(() => this.presenceRequests.delete(key))

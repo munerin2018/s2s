@@ -125,7 +125,9 @@ export default function App () {
   useEffect(() => {
     if (!status?.peerAddresses?.length) return
     setBootstrapState((saved) => {
-      const routes = publicPeerRoutes(status.peerAddresses, saved)
+      // These are routes retained from authenticated S2S connections. Restore
+      // paired peers from IndexedDB too, not just the smaller UI address list.
+      const routes = publicPeerRoutes(status.peerAddresses, [...saved, ...status.peerAddresses])
       const next = mergePeerRoutes(routes, saved)
       if (JSON.stringify(next) === JSON.stringify(saved)) return saved
       saveBootstrapPeers(next)
@@ -168,13 +170,16 @@ export default function App () {
       if (recovering || cancelled || document.visibilityState !== 'visible') return
       recovering = true
       try {
-        await adapter.act('checkPeers').catch(() => {})
+        const checking = adapter.act('checkPeers').catch(() => {})
+        await tryReconnect()
+        await checking
         if (cancelled) return
         await tryReconnect()
         if (!cancelled) await act('sync').catch(() => {})
       } finally { recovering = false }
     }
     tryReconnect()
+    adapter.ready?.then(() => { if (!cancelled) tryReconnect() }).catch(() => {})
     const t = setInterval(tryReconnect, 5000)
     const connection = navigator.connection
     document.addEventListener('visibilitychange', recover)

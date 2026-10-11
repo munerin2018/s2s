@@ -48,3 +48,24 @@ test('limited public-style relay carries posts both ways, account presence and m
     assert.deepEqual(await fetchBlobFrom(netA.libp2p, netB.libp2p.peerId, media.blob), bytes)
   } finally { await Promise.all([netA.stop(), netB.stop(), relay.stop()]) }
 })
+
+test('background discovery leaves room for an inbound mobile user', { timeout: 30_000 }, async () => {
+  const config = { addresses: { listen: ['/ip4/127.0.0.1/tcp/0'] }, transports: [tcp()], connectionEncrypters: [noise()], streamMuxers: [yamux()], services: { identify: identify(), ping: ping() } }
+  const relay = await createLibp2p({ ...config, services: { ...config.services, relay: circuitRelayServer() } })
+  const background = await Promise.all(Array.from({ length: 7 }, () => createLibp2p(config)))
+  const a = new S2S({ identity: createIdentity() })
+  const b = new S2S({ identity: createIdentity() })
+  const netA = new S2SNetwork({ s2s: a, transports: [tcp()], listen: ['/p2p-circuit'], publicRouting: true })
+  const netB = new S2SNetwork({ s2s: b, transports: [tcp()], listen: ['/p2p-circuit'] })
+  try {
+    await Promise.all([netA.start(), netB.start()])
+    const relayAddr = relay.getMultiaddrs()[0]
+    await Promise.all([netA.libp2p.dial(relayAddr), netB.libp2p.dial(relayAddr)])
+    await until(() => netA.libp2p.getMultiaddrs().length && netB.libp2p.getMultiaddrs().length)
+    for (const node of background) await netA.libp2p.dial(node.getMultiaddrs()[0]).catch(() => {})
+    assert.ok(netA.libp2p.getConnections().length <= 6, 'discovery must not fill user connection slots')
+    await netB.connect(`${relayAddr}/p2p-circuit/p2p/${netA.libp2p.peerId}`)
+    await until(() => netA.onlineUsers().some((u) => u.id === b.me))
+    assert.ok(netA.libp2p.getConnections().some((c) => c.remotePeer.equals(netB.libp2p.peerId)))
+  } finally { await Promise.all([netA.stop(), netB.stop(), relay.stop(), ...background.map((n) => n.stop())]) }
+})

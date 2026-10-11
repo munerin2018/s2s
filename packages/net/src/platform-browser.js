@@ -36,10 +36,12 @@ import { publicDHT, PUBLIC_BOOTSTRAP } from './public-dht.js'
  */
 export function createBrowserPeer (opts) {
   const { bootstrapPeers = [], relayRoutes = [], publicRouting = true, log } = opts
-  const entryPoints = [...new Set([...relayRoutes, ...bootstrapPeers, ...(publicRouting ? PUBLIC_BOOTSTRAP : [])])]
+  // The UI retries paired S2S peers with bounded dials and route refresh.
+  // Do not let bootstrap simultaneously start a second, long stale dial.
+  const entryPoints = [...new Set([...relayRoutes, ...(publicRouting ? PUBLIC_BOOTSTRAP : bootstrapPeers)])]
 
   const peerDiscovery = []
-  if (entryPoints.length > 0) peerDiscovery.push(bootstrap({ list: entryPoints }))
+  if (entryPoints.length > 0) peerDiscovery.push(bootstrap({ list: entryPoints, timeout: 0, tagTTL: 86_400_000 }))
 
   return new S2SNetwork({
     s2s: opts.s2s,
@@ -57,6 +59,7 @@ export function createBrowserPeer (opts) {
     peerDiscovery,
     services: publicRouting ? { dht: publicDHT() } : {},
     publicRouting,
+    publicRelay: publicRouting,
     discoveryPeers: entryPoints,
     // libp2p's default gater refuses to dial private and loopback addresses
     // from a browser, which is a sensible default for a public DHT crawler
@@ -66,7 +69,10 @@ export function createBrowserPeer (opts) {
     // multiaddr, so allowing these does not let us be pointed at a stranger.
     connectionGater: { denyDialMultiaddr: () => false },
     // A browser listens only for inbound WebRTC negotiated over a relay.
-    listen: [...relayRoutes.map((a) => `${a}/p2p-circuit`), '/p2p-circuit', '/webrtc'],
+    // Saved relays are dialled immediately as entry points. A generic relay
+    // listener reserves the first usable one without blocking startup on a
+    // particular relay that disappeared while the app was closed.
+    listen: ['/p2p-circuit', '/webrtc'],
     log
   })
 }

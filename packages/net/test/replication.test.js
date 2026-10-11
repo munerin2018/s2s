@@ -8,6 +8,7 @@ import { createIdentity } from '../../core/src/identity.js'
 import { S2S } from '../../core/src/s2s.js'
 import { createNodePeer } from '../src/platform-node.js'
 import { diff } from '../src/sync.js'
+import { generateKeyPair } from '@libp2p/crypto/keys'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -27,6 +28,7 @@ async function peer (name, opts = {}) {
   const net = createNodePeer({
     s2s,
     lan: false, // dial explicitly so the test does not depend on the LAN
+    publicRouting: false, // integration tests stay on localhost
     relay: false,
     log: (m) => process.env.S2S_DEBUG && console.log(`[${name}] ${m}`),
     ...opts
@@ -47,6 +49,22 @@ test('online list identifies the connected account, not authors copied in its lo
     await a.net.libp2p.hangUp(b.net.libp2p.peerId)
     await until(() => a.net.onlineUsers().length === 0)
   } finally { await Promise.all([a.net.stop(), b.net.stop()]) }
+})
+
+test('immediate bootstrap and repeated reopening never miss account identification', async () => {
+  const remote = await peer('restart-remote')
+  const account = new S2S({ identity: createIdentity() })
+  const privateKey = await generateKeyPair('Ed25519')
+  const address = remote.net.libp2p.getMultiaddrs().find((m) => m.toString().includes('/tcp/') && !m.toString().includes('/ws')).toString()
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const net = createNodePeer({ s2s: account, privateKey, lan: false, publicRouting: false, relay: false, bootstrapPeers: [address] })
+      try {
+        await net.start()
+        await until(() => net.onlineUsers().some((u) => u.id === remote.s2s.me), 3_000, 'account online immediately after bootstrap')
+      } finally { await net.stop() }
+    }
+  } finally { await remote.net.stop() }
 })
 
 test('diff computes exactly the ranges the other side is missing', () => {

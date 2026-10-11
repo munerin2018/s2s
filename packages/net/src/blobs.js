@@ -80,6 +80,7 @@ export class BlobFetcher {
     this.libp2p = libp2p
     this.s2s = s2s
     this.log = opts.log ?? (() => {})
+    this.peers = opts.peers ?? (() => this.libp2p.getPeers())
     this.wanted = new Map() // id -> { attempts, next }
     this.inFlight = new Set()
     this.timeoutMs = opts.timeoutMs ?? 45_000
@@ -120,7 +121,7 @@ export class BlobFetcher {
     clearTimeout(this.timer)
     this.timer = null
     if (this.stopped || this.wanted.size === 0) return
-    const peers = this.libp2p.getPeers()
+    const peers = this.peers()
     // Nobody to ask; a new connection calls rescan(), which lands back here.
     if (peers.length === 0) return
 

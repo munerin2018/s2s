@@ -27,9 +27,40 @@ export function publicDHT () {
   return (components) => {
     const dht = kadDHT({
       clientMode: true,
-      peerInfoMapper: removePrivateAddressesMapper
+      peerInfoMapper: removePrivateAddressesMapper,
+      allowQueryWithZeroPeers: true,
+      initialQuerySelfInterval: 3_600_000,
+      querySelfInterval: 3_600_000
     })(components)
-    paceRoutingQueries(dht[peerRoutingSymbol])
+    // This client routes via the shared entries below. The SDK's independent
+    // startup table refresh uses its internal recursive router (not the
+    // public peerRouting adapter) and would still crawl the global DHT.
+    dht.routingTableRefresh.afterStart = async () => {}
+    dht.querySelf.start = () => {}
+    // Mobile clients need a few usable relays, not a recursive crawl of the
+    // global TCP DHT. Bound each discovery step to the two shared entry peers.
+    dht[peerRoutingSymbol].getClosestPeers = async function * (key, options = {}) {
+      const seen = new Set()
+      const results = await Promise.allSettled(PUBLIC_BOOTSTRAP.map(async (entry) => {
+        const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(3_000)]) : AbortSignal.timeout(3_000)
+        const seed = peerIdFromString(multiaddr(entry).getPeerId())
+        await components.connectionManager.openConnection(multiaddr(entry), { signal })
+        const peers = []
+        for await (const event of dht.network.sendRequest(seed, { type: MessageType.FIND_NODE, key }, { signal })) {
+          if (event.name === 'PEER_RESPONSE') peers.push(...event.closer)
+        }
+        return peers
+      }))
+      for (const result of results) {
+        if (result.status !== 'fulfilled') continue
+        for (const peer of result.value) {
+          if (seen.has(peer.id.toString())) continue
+          seen.add(peer.id.toString())
+          yield peer
+        }
+      }
+    }
+    paceRoutingQueries(dht[peerRoutingSymbol], 1_000)
     return dht
   }
 }
