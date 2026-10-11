@@ -7,6 +7,7 @@
 import { S2S } from '../../../core/src/s2s.js'
 import { IdbBackend, loadOrCreateSecretIdb } from '../../../core/src/store-idb.js'
 import { createBrowserPeer } from '../../../net/src/platform-browser.js'
+import { loadBrowserNetworkKey } from '../../../net/src/browser-key.js'
 
 const LOG_LIMIT = 300
 
@@ -34,20 +35,35 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
     onLog?.(line)
   }
 
-  const net = createBrowserPeer({ s2s, bootstrapPeers, log })
+  const privateKey = await loadBrowserNetworkKey(backend)
+  let net = createBrowserPeer({ s2s, bootstrapPeers, privateKey, log })
 
   let netReady = false
-  const netStarting = net
-    .start()
-    .then(() => { netReady = true })
-    .catch((err) => log(`network could not start: ${err.message} - you are offline but the app still works`))
+  let starting = null
+  let stopped = false
+  const ensureNetwork = () => {
+    if (stopped || netReady) return Promise.resolve()
+    if (starting) return starting
+    starting = net.start().then(() => { netReady = true; notify() }).catch(async (err) => {
+      log(`network could not start: ${err.message}; will retry`)
+      await net.stop().catch(() => {})
+      net = createBrowserPeer({ s2s, bootstrapPeers, privateKey, log })
+      wireNetwork()
+    }).finally(() => { starting = null })
+    return starting
+  }
 
   const listeners = new Set()
   const notify = () => listeners.forEach((fn) => fn())
   s2s.addEventListener('change', notify)
-  net.addEventListener('peers', notify)
-  net.addEventListener('sync', notify)
+  const wireNetwork = () => {
+    net.addEventListener('peers', notify)
+    net.addEventListener('sync', notify)
+  }
+  wireNetwork()
   s2s.store.addEventListener('blob', notify)
+  const netStarting = ensureNetwork()
+  const retryTimer = setInterval(() => ensureNetwork(), 5000)
 
   const urlCache = new Map()
 
@@ -66,6 +82,10 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
     },
 
     async act (action, payload = {}) {
+      if (['connect', 'sync', 'checkPeers'].includes(action)) {
+        await ensureNetwork()
+        if (!netReady) throw new Error('通信の起動に失敗しました。自動再試行しています。')
+      }
       return runAction(s2s, net, action, payload)
     },
 
@@ -104,6 +124,9 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
      * every setting. There is no server copy to ask anyone to delete.
      */
     async wipe () {
+      stopped = true
+      clearInterval(retryTimer)
+      await starting
       await net.stop().catch(() => {})
       backend.db?.close()
       await new Promise((resolve) => {
@@ -112,7 +135,12 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
       })
       clearLocalSettings()
     },
-    stop: () => net.stop()
+    async stop () {
+      stopped = true
+      clearInterval(retryTimer)
+      await starting
+      await net.stop()
+    }
   }
 }
 

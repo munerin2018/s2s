@@ -428,7 +428,9 @@ export function Settings ({ snap, adapter, status, act, refreshStatus, bootstrap
       <div className="card">
         <h3>このピア</h3>
         <div className="small">
-          状態: {status?.online ? <span style={{ color: 'var(--good)' }}>オンライン</span> : '起動中／オフライン'}
+          状態: {status?.peers?.length
+            ? <span style={{ color: 'var(--good)' }}>接続中</span>
+            : status?.online ? '未接続（接続先を確認しています）' : '通信起動中／再試行中'}
           {' · '}接続中のピア: {status?.peers?.length ?? 0}
         </div>
         {status?.peerId && <code className="mono">{status.peerId}</code>}

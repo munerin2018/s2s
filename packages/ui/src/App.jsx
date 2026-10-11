@@ -134,6 +134,7 @@ export default function App () {
     if (!adapter) return
     let cancelled = false
     let inFlight = false
+    let recovering = false
     const tryReconnect = async () => {
       if (inFlight || cancelled) return
       inFlight = true
@@ -152,23 +153,30 @@ export default function App () {
       }
     }
     const recover = async () => {
-      if (cancelled || document.visibilityState !== 'visible') return
-      await adapter.act('checkPeers').catch(() => {})
-      if (cancelled) return
-      await tryReconnect()
-      if (!cancelled) await act('sync').catch(() => {})
+      if (recovering || cancelled || document.visibilityState !== 'visible') return
+      recovering = true
+      try {
+        await adapter.act('checkPeers').catch(() => {})
+        if (cancelled) return
+        await tryReconnect()
+        if (!cancelled) await act('sync').catch(() => {})
+      } finally { recovering = false }
     }
     tryReconnect()
     const t = setInterval(tryReconnect, 5000)
     const connection = navigator.connection
     document.addEventListener('visibilitychange', recover)
     window.addEventListener('online', recover)
+    window.addEventListener('s2s:resume', recover)
+    window.addEventListener('pageshow', recover)
     connection?.addEventListener('change', recover)
     return () => {
       cancelled = true
       clearInterval(t)
       document.removeEventListener('visibilitychange', recover)
       window.removeEventListener('online', recover)
+      window.removeEventListener('s2s:resume', recover)
+      window.removeEventListener('pageshow', recover)
       connection?.removeEventListener('change', recover)
     }
   }, [adapter, bootstrap, act, refreshStatus])

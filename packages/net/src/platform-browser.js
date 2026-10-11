@@ -41,6 +41,7 @@ export function createBrowserPeer (opts) {
 
   return new S2SNetwork({
     s2s: opts.s2s,
+    privateKey: opts.privateKey,
     transports: [
       // Listed first because it is the one that works everywhere.
       webRTCDirect(),

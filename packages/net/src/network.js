@@ -336,8 +336,14 @@ export class S2SNetwork extends EventTarget {
 
   async connect (addr) {
     const ma = multiaddr(addr)
-    await this.libp2p.dial(ma, { signal: AbortSignal.timeout(20_000) })
-    return ma.toString()
+    try {
+      await this.libp2p.dial(ma, { signal: AbortSignal.timeout(20_000) })
+      return ma.toString()
+    } catch (err) {
+      this.log(`connect failed (${ma.toString()}): ${err.message}`)
+      this.dispatchEvent(new Event('peers'))
+      throw err
+    }
   }
 
   peerInfo () {
