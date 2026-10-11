@@ -25,7 +25,7 @@ const LAN_PATTERNS = [
 
 const isLoopback = (addr) => addr.startsWith('/ip4/127.') || addr.startsWith('/ip6/::1')
 const isWebRTCDirect = (addr) => addr.includes('/webrtc-direct/')
-const isWebSocket = (addr) => addr.includes('/ws/') || addr.endsWith('/ws')
+const isWebSocket = (addr) => /\/wss?(\/|$)/.test(addr)
 
 function isPublicIPv4 (addr) {
   const match = /^\/ip4\/(\d+)\.(\d+)\.(\d+)\.(\d+)\//.exec(addr)
@@ -48,9 +48,13 @@ const LIKELY_VIRTUAL = [
 
 function score (addr) {
   if (isLoopback(addr)) return -1
+  // A public TLS WebSocket circuit works even when a VPN blocks UDP. Prefer
+  // the circuit itself over a WebRTC upgrade for the initial pairing link.
+  if (/\/p2p-circuit\/p2p\//.test(addr) && /\/(tls\/ws|wss)\//.test(addr) &&
+      (/^\/dns[46]?\//.test(addr) || isPublicIPv4(addr))) return 220
 
   let n = 0
-  // The only transport a https page can use, so it outranks everything.
+  // Direct WebRTC and secure WebSockets both work from HTTPS pages.
   if (isWebRTCDirect(addr)) n += 100
   else if (isWebSocket(addr)) n += 40
   else return -1 // tcp: other desktop peers only, not browsers

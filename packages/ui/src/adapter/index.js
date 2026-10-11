@@ -18,9 +18,8 @@ export async function createAdapter (opts = {}) {
 /**
  * Peers the web build tries on first run.
  *
- * Empty by default, and that is deliberate: a default bootstrap list is the
- * thing that quietly turns "peer to peer" into "everyone depends on my server".
- * You paste in the address your own desktop app prints, or a friend's.
+ * User-paired S2S peers. Public DHT entry points are configured separately by
+ * the browser transport, and are never shown here as S2S participants.
  */
 export function savedBootstrapPeers () {
   try {

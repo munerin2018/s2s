@@ -18,8 +18,9 @@ import { ping } from '@libp2p/ping'
 import { gossipsub } from '@chainsafe/libp2p-gossipsub'
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2'
 import { multiaddr } from '@multiformats/multiaddr'
+import { FaultTolerance } from '@libp2p/interface'
 
-import { EVENT_TOPIC, boardTopic } from './protocol.js'
+import { EVENT_TOPIC, boardTopic, SYNC_PROTOCOL } from './protocol.js'
 import { handleSync, syncWith } from './sync.js'
 import { handleBlobs, BlobFetcher } from './blobs.js'
 
@@ -44,7 +45,8 @@ export class S2SNetwork extends EventTarget {
     this.libp2p = null
     this.blobFetcher = null
     this.syncing = new Map()
-    this.stats = { received: 0, published: 0, rejected: 0 }
+    this.participants = new Set()
+    this.stats = { received: 0, published: 0, rejected: 0, syncs: 0, lastSync: null }
   }
 
   async start () {
@@ -60,6 +62,7 @@ export class S2SNetwork extends EventTarget {
       ...(this.opts.privateKey ? { privateKey: this.opts.privateKey } : {}),
       ...(this.opts.datastore ? { datastore: this.opts.datastore } : {}),
       addresses: { listen },
+      ...(this.opts.publicRouting ? { transportManager: { faultTolerance: FaultTolerance.NO_FATAL } } : {}),
       ...(this.opts.connectionGater ? { connectionGater: this.opts.connectionGater } : {}),
       transports: [...transports, circuitRelayTransport()],
       connectionEncrypters: [noise()],
@@ -191,6 +194,7 @@ export class S2SNetwork extends EventTarget {
     })
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const id = evt.detail.id
+      if (this.opts.publicRouting && !this.opts.discoveryPeers?.some((a) => multiaddr(a).getPeerId() === id.toString())) return
       // mDNS re-announces every peer on the LAN every few seconds, so this
       // fires again and again for someone we are already talking to. Dialing
       // anyway opens a second, redundant connection to the same peer - each
@@ -228,7 +232,15 @@ export class S2SNetwork extends EventTarget {
     this.libp2p.addEventListener('peer:disconnect', (evt) => {
       this.log(`disconnected from ${short(evt.detail.toString())}`)
       this.syncing.delete(evt.detail.toString())
+      this.participants.delete(evt.detail.toString())
       this.dispatchEvent(new Event('peers'))
+    })
+
+    this.libp2p.addEventListener('peer:identify', (evt) => {
+      if (!evt.detail.protocols.includes(SYNC_PROTOCOL)) return
+      this.participants.add(evt.detail.peerId.toString())
+      this.dispatchEvent(new Event('peers'))
+      this.syncPeer(evt.detail.peerId).catch(() => {})
     })
 
     // Periodic reconciliation catches anything gossip missed.
@@ -256,6 +268,7 @@ export class S2SNetwork extends EventTarget {
 
   async syncPeer (peerId) {
     const key = peerId.toString()
+    if (this.opts.publicRouting && !this.participants.has(key)) return
     if (this.syncing.has(key)) {
       this.syncing.get(key).again = true
       return
@@ -264,6 +277,8 @@ export class S2SNetwork extends EventTarget {
     this.syncing.set(key, token)
     try {
       const res = await syncWith(this.libp2p, this.s2s, peerId, { log: this.log })
+      this.stats.syncs++
+      this.stats.lastSync = Date.now()
       if (res.received) {
         this.blobFetcher.drain()
         this.dispatchEvent(new Event('sync'))
@@ -358,15 +373,19 @@ export class S2SNetwork extends EventTarget {
     return {
       peerId: this.libp2p.peerId.toString(),
       addresses: this.libp2p.getMultiaddrs().map((m) => m.toString()),
-      peers: this.libp2p.getPeers().map((p) => p.toString()),
+      peers: this.participantPeers().map((p) => p.toString()),
       topics: this.libp2p.services.pubsub.getTopics(),
       stats: { ...this.stats }
     }
   }
 
+  participantPeers () {
+    return this.libp2p.getPeers().filter((p) => !this.opts.publicRouting || this.participants.has(p.toString()))
+  }
+
   /** Addresses announced by authenticated connected peers, including NAT updates. */
   async peerAddresses () {
-    const records = await Promise.allSettled(this.libp2p.getPeers().map(async (id) => {
+    const records = await Promise.allSettled(this.participantPeers().map(async (id) => {
       const peer = await this.libp2p.peerStore.get(id)
       return peer.addresses.flatMap(({ multiaddr: addr }) => {
         if (addr.getPeerId() && addr.getPeerId() !== id.toString()) return []

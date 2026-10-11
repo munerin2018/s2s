@@ -26,6 +26,7 @@ import * as filters from '@libp2p/websockets/filters'
 import { webRTC, webRTCDirect } from '@libp2p/webrtc'
 import { bootstrap } from '@libp2p/bootstrap'
 import { S2SNetwork } from './network.js'
+import { publicDHT, PUBLIC_BOOTSTRAP } from './public-dht.js'
 
 /**
  * @param {object} opts
@@ -34,10 +35,11 @@ import { S2SNetwork } from './network.js'
  * @param {(m: string) => void} [opts.log]
  */
 export function createBrowserPeer (opts) {
-  const { bootstrapPeers = [], log } = opts
+  const { bootstrapPeers = [], relayRoutes = [], publicRouting = true, log } = opts
+  const entryPoints = [...new Set([...relayRoutes, ...bootstrapPeers, ...(publicRouting ? PUBLIC_BOOTSTRAP : [])])]
 
   const peerDiscovery = []
-  if (bootstrapPeers.length > 0) peerDiscovery.push(bootstrap({ list: bootstrapPeers }))
+  if (entryPoints.length > 0) peerDiscovery.push(bootstrap({ list: entryPoints }))
 
   return new S2SNetwork({
     s2s: opts.s2s,
@@ -53,6 +55,9 @@ export function createBrowserPeer (opts) {
       webRTC()
     ],
     peerDiscovery,
+    services: publicRouting ? { dht: publicDHT() } : {},
+    publicRouting,
+    discoveryPeers: entryPoints,
     // libp2p's default gater refuses to dial private and loopback addresses
     // from a browser, which is a sensible default for a public DHT crawler
     // and exactly wrong here: the peer you are trying to reach is a desktop
@@ -61,7 +66,7 @@ export function createBrowserPeer (opts) {
     // multiaddr, so allowing these does not let us be pointed at a stranger.
     connectionGater: { denyDialMultiaddr: () => false },
     // A browser listens only for inbound WebRTC negotiated over a relay.
-    listen: ['/p2p-circuit', '/webrtc'],
+    listen: [...relayRoutes.map((a) => `${a}/p2p-circuit`), '/p2p-circuit', '/webrtc'],
     log
   })
 }

@@ -9,7 +9,7 @@ import { IdbBackend, loadOrCreateSecretIdb } from '../../../core/src/store-idb.j
 import { createBrowserPeer } from '../../../net/src/platform-browser.js'
 import { loadBrowserNetworkKey } from '../../../net/src/browser-key.js'
 import { nativeDialAddresses } from '../../../net/src/native-addresses.js'
-import { publicPeerRoutes } from '../../../net/src/peer-routes.js'
+import { publicPeerRoutes, relayRoutesForRestart } from '../../../net/src/peer-routes.js'
 import { Capacitor } from '@capacitor/core'
 
 const LOG_LIMIT = 300
@@ -26,6 +26,8 @@ export function clearLocalSettings () {
 export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
   const backend = await new IdbBackend().init()
   const learnedRoutes = new Set((await backend.getMeta('peerRoutes')) ?? [])
+  const savedRelays = (await backend.getMeta('relayRoutes')) ?? []
+  let relayRoutes = publicPeerRoutes(savedRelays, savedRelays).filter((a) => !a.includes('/p2p-circuit')).slice(0, 2)
   const identity = await loadOrCreateSecretIdb(backend)
 
   const s2s = new S2S({ identity, backend })
@@ -40,7 +42,7 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
   }
 
   const privateKey = await loadBrowserNetworkKey(backend)
-  let net = createBrowserPeer({ s2s, bootstrapPeers, privateKey, log })
+  let net = createBrowserPeer({ s2s, bootstrapPeers, relayRoutes, privateKey, log })
 
   let netReady = false
   let starting = null
@@ -51,7 +53,7 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
     starting = net.start().then(() => { netReady = true; notify() }).catch(async (err) => {
       log(`network could not start: ${err.message}; will retry`)
       await net.stop().catch(() => {})
-      net = createBrowserPeer({ s2s, bootstrapPeers, privateKey, log })
+      net = createBrowserPeer({ s2s, bootstrapPeers, relayRoutes, privateKey, log })
       wireNetwork()
     }).finally(() => { starting = null })
     return starting
@@ -98,6 +100,11 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
 
     async status () {
       if (netReady) {
+        const currentRelays = relayRoutesForRestart(net.libp2p.getMultiaddrs().map(String))
+        if (currentRelays.length && JSON.stringify(currentRelays) !== JSON.stringify(relayRoutes)) {
+          relayRoutes = currentRelays
+          await backend.setMeta('relayRoutes', relayRoutes)
+        }
         const announced = await net.peerAddresses().catch(() => [])
         const routes = publicPeerRoutes(announced, announced)
         let changed = false
@@ -112,7 +119,8 @@ export async function createLocalAdapter ({ bootstrapPeers = [], onLog } = {}) {
         online: netReady,
         peerId: netReady ? net.libp2p.peerId.toString() : null,
         addresses: netReady ? net.libp2p.getMultiaddrs().map((m) => m.toString()) : [],
-        peers: netReady ? net.libp2p.getPeers().map((p) => p.toString()) : [],
+        peers: netReady ? net.participantPeers().map((p) => p.toString()) : [],
+        transportPeers: netReady ? net.libp2p.getPeers().map((p) => p.toString()) : [],
         peerAddresses: [...learnedRoutes],
         stats: net.stats,
         logs: logs.slice(-120)

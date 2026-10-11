@@ -40,3 +40,11 @@ export function groupPeerRoutes (addresses) {
   }
   return [...groups].map(([peerId, routes]) => ({ peerId, routes }))
 }
+
+/** Re-reserve the same public relay after reopening, keeping paired routes usable. */
+export function relayRoutesForRestart (addresses) {
+  return [...new Set(publicPeerRoutes(addresses, addresses).flatMap((a) => {
+    const circuit = a.indexOf('/p2p-circuit')
+    return circuit < 0 ? [] : [a.slice(0, circuit)]
+  }))].slice(0, 2)
+}
