@@ -55,11 +55,12 @@ android {
     }
     buildTypes {
         release {
-            // The app is a WebView around a bundle Vite has already minified;
-            // R8 has almost nothing to shrink and a lot to break by renaming
-            // classes Capacitor reaches by reflection.
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // R8's optimized configuration keeps Capacitor's annotation-based
+            // plugin reflection rules (from its consumer rules) while shrinking
+            // and obfuscating the Android DEX code for Play's quality checks.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystoreProps['storeFile']) {
                 signingConfig signingConfigs.upload
             }
